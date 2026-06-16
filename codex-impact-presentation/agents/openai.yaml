@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codex Impact 발표자료"
+  short_description: "워크숍 3분 발표자료를 최종 Google Slides 템플릿에 자동 채움"
+  brand_color: "#2561D9"
+  default_prompt: "Use $codex-impact-presentation to create a 3-minute Codex Impact Workshop presentation from the participant input folder. Ask for missing reflections first, then fill a copy of the final Google Slides template. Do not use legacy PPTX outputs."
+policy:
+  allow_implicit_invocation: true

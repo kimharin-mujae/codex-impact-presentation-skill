@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+outputs/
+presentation-assets/problem_image.png
+presentation-assets/result_screenshot.png
+presentation-input.json
+*.log
