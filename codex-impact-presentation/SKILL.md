@@ -105,26 +105,9 @@ node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-cont
 
 이미지는 문제가 해결된 뒤 현장 업무가 정돈되고 사람이 책임 있게 최종 판단하는 모습을 보여줘야 한다. 특정 제품 UI, 브랜드 로고, 개인정보, 식별 가능한 얼굴은 피한다.
 
-### 3페이지 카드 아이콘
+### 템플릿 장식 요소
 
-3페이지의 파란 원 안 아이콘은 Lucide 스타일의 흰색 PNG를 사용한다. 기존 초록색 아이콘 이미지를 그대로 두지 말고, 의미에 맞는 흰색 아이콘으로 교체한다.
-
-기본 아이콘 자산:
-
-- `assets/icons/trending-up.png`
-- `assets/icons/shield-check.png`
-- `assets/icons/message-circle.png`
-
-기본 매칭:
-
-- `현장에 생기는 변화` -> `trending-up.png`
-- `안전하게 쓰기 위한 기준` -> `shield-check.png`
-
-텍스트 기반 매칭이 필요하면 아래 키워드를 우선한다.
-
-- `변화`, `개선`, `빨리`, `발견`, `공유`, `효과` -> `trending-up.png`
-- `안전`, `기준`, `개인정보`, `금지`, `확인`, `책임` -> `shield-check.png`
-- `해결`, `정리`, `협업`, `현장`, `적용` -> `message-circle.png`
+3페이지의 아이콘, 파란 원, 카드 장식은 템플릿 디자인의 일부이므로 교체하지 않는다. 자동채우기는 텍스트와 지정된 이미지 슬롯만 바꾼다.
 
 ## 슬라이드 채우기
 
@@ -136,8 +119,7 @@ Google Drive/Slides 도구가 가능하면 다음 순서로 작업한다.
 4. `presentation-assets/result_screenshot.png`가 있으면 2페이지 캡처 영역에 넣는다. 없으면 `{{result_screenshot}}`만 빈 문자열로 치환하고 캡처 영역은 그대로 둔다.
 5. `presentation-assets/solution_image.png`를 3페이지 해결된 모습 이미지 슬롯에 `replaceImage`로 넣는다.
 6. 삽입 후 슬라이드 텍스트를 다시 읽어 placeholder가 남았는지 확인한다.
-7. 3페이지의 기존 아이콘 이미지 2개를 텍스트 의미에 맞는 흰색 Lucide PNG로 교체한다.
-8. 가능하면 Google Slides 커넥터 썸네일로 레이아웃을 확인하고, 넘치는 문장은 더 짧게 다듬는다.
+7. 가능하면 Google Slides 커넥터 썸네일로 레이아웃을 확인하고, 넘치는 문장은 더 짧게 다듬는다.
 
 발표자 노트는 만들지 않는다. 템플릿에 기존 노트가 남아 있어도 사용자가 요청하지 않는 한 대본으로 고치거나 새로 정리하지 않는다.
 
