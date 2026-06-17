@@ -518,7 +518,7 @@ async function main() {
     missingAssets.push({
       key: "result_screenshot",
       path: path.join(assetsDir, "result_screenshot.png"),
-      question: "2페이지에 넣을 결과물 캡처 이미지가 있으면 presentation-assets/result_screenshot.png로 넣어주세요.",
+      question: "2페이지에 넣을 결과물 화면을 직접 캡처해서 presentation-assets/result_screenshot.png로 넣어주세요. 바로 준비하기 어렵다면 캡처 영역은 비워두고 진행할 수 있습니다.",
     });
   }
   if (!await exists(path.join(assetsDir, "solution_image.png"))) {

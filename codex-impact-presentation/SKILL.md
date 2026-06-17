@@ -13,7 +13,7 @@ Codex Impact Workshop 참가팀이 3분 발표자료를 만들 때 사용한다.
 - 텍스트가 넘칠 것 같으면 문장을 더 짧게 줄인다. 디자인, 카드 크기, 폰트는 가능한 유지한다.
 - 문제상황 이미지는 사용자가 주면 사용하고, 없으면 `workshop.json`의 문제정의 답변으로 생성한다.
 - 해결된 모습 이미지는 사용자가 주면 사용하고, 없으면 문제와 현장 변화 문구를 바탕으로 생성한다.
-- 결과물 캡처는 사용자가 제공하면 사용하고, 없으면 가능한 경우 Codex가 결과물 화면을 캡처한다.
+- 결과물 캡처는 사용자가 직접 캡처해서 제공한 이미지만 사용한다. 없으면 실행 가능한 앱을 찾거나 직접 캡처하려고 시도하지 말고, 사용자에게 `presentation-assets/result_screenshot.png`로 넣어달라고 요청한다.
 - 예전 PPTX 생성 스크립트나 `outputs/Codex_Impact_Workshop_Filled_Presentation.pptx` 같은 기존 결과물을 재사용하지 않는다.
 - 최종 발표자료는 항상 아래 Google Slides 템플릿의 사본에서 시작한다.
 - 발표자 노트는 작성하거나 수정하지 않는다. 이 발표자료는 보이는 슬라이드 3장만 자동채우기 대상이다.
@@ -48,7 +48,7 @@ https://docs.google.com/presentation/d/1CW9VJj3VqpyoG4th5S8qXHKXfyjAYEbvXoNYbm64
 
 발표자료를 만들기 전에 부족한 입력만 짧게 묻는다.
 
-1. 2페이지 결과물 캡처 이미지가 있는지
+1. 2페이지 결과물 캡처 이미지를 직접 캡처해서 `presentation-assets/result_screenshot.png`로 넣어줄 수 있는지
 2. 3페이지 해결된 모습 이미지가 이미 있는지
 
 문제상황 이미지는 없으면 생성할 수 있으므로 필수로 요구하지 않는다.
@@ -92,8 +92,8 @@ node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-cont
 우선순위:
 
 1. `presentation-assets/result_screenshot.png`가 있으면 사용
-2. 결과물이 웹앱이면 브라우저로 캡처해 저장
-3. 없으면 캡처 영역은 비워두고 사용자에게 보충 가능하다고 알린다
+2. 없으면 실행 가능한 앱이나 화면을 찾지 않고 사용자에게 직접 캡처한 이미지를 요청한다
+3. 사용자가 바로 제공하기 어렵다고 하면 캡처 영역은 비워두고 진행할 수 있다고 알린다
 
 ### 해결된 모습 이미지
 
