@@ -2,11 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const CWD = process.cwd();
-const DEFAULT_REFLECTIONS = new Set([
-  "반복 검토를 줄이고 판단에 집중할 가능성을 확인",
-  "자동화보다 사람의 검토 흐름 설계가 중요함",
-]);
-
 function parseArgs(argv) {
   const args = {
     inputDir: null,
@@ -257,11 +252,6 @@ async function readPresentationInput(inputDir) {
   return readJson(inputPath);
 }
 
-function isRealReflection(value) {
-  const text = compact(value);
-  return Boolean(text) && !DEFAULT_REFLECTIONS.has(text) && !/^\{\{.+\}\}$/u.test(text);
-}
-
 function buildSlide1Title(data) {
   const workflowType = data.library_metadata?.workflow_type ?? "";
   const problem = data.problem?.actual_work_problem ?? "";
@@ -436,14 +426,49 @@ function buildProblemImagePrompt(data) {
 현실적인 사진 스타일로, 발표자료에 넣었을 때 문제상황이 직관적으로 보이는 한 장면으로 만들어줘.`;
 }
 
-function buildContent(data, input) {
-  const socialReflection = isRealReflection(input.reflection_social_innovator)
-    ? input.reflection_social_innovator
-    : "{{reflection_social_innovator}}";
-  const developerReflection = isRealReflection(input.reflection_developer)
-    ? input.reflection_developer
-    : "{{reflection_developer}}";
+function buildSolutionImagePrompt(data, content) {
+  const actual = data.problem?.actual_work_problem ?? "";
+  const people = data.problem?.people_affected ?? "";
+  const workflow = data.ai_agent_design?.changed_workflow ?? data.mvp?.included_workflow_steps ?? "";
+  const impact = content.field_impact_bullets ?? "";
 
+  return `아래 답변과 발표 문구를 바탕으로, 문제가 해결된 뒤 현장에 생긴 긍정적인 모습을 한 장의 현실적인 이미지로 표현해줘.
+
+참가자 답변
+
+- 실제 업무 문제: ${actual}
+- 가장 어려움을 겪는 사람: ${people}
+- 바뀐 업무 흐름: ${workflow}
+
+발표 문구
+
+- 현장 변화:
+${impact}
+
+이미지 생성 요청
+
+이 이미지는 문제상황이 아니라, AI 에이전트 MVP를 현장에서 책임 있게 활용해 업무 흐름이 나아진 모습을 보여주기 위한 것이다.
+
+다음 요소가 자연스럽게 드러나게 표현해줘.
+
+1. 현장 담당자가 더 차분하게 판단하거나 협업하는 모습
+2. 정리된 자료, 체크리스트, 검토표, 간단한 화면 등 업무가 정돈된 단서
+3. 대기, 누락, 혼란이 줄고 다음 행동이 명확해진 분위기
+4. AI가 결정을 대신하는 장면이 아니라 사람이 최종 판단하는 흐름
+5. 발표자료 3페이지의 회색 이미지 영역에 들어갔을 때 해결 후 변화가 직관적으로 보이는 장면
+
+단, 다음은 포함하지 말아줘.
+
+- 특정 제품 UI나 브랜드 로고
+- 실제 개인정보, 이름, 전화번호, 주소, 주민번호, 식별 가능한 얼굴
+- AI가 사람을 대체하거나 최종 결정을 내리는 장면
+- 과장된 미래도시, 로봇, SF적 장면
+- 읽어야 이해되는 긴 문장이나 복잡한 텍스트
+
+현실적인 사진 스타일로, 따뜻하지만 과장되지 않게 만들어줘.`;
+}
+
+function buildContent(data, input) {
   return {
     team_name: data.team?.name ?? data.team_name ?? "",
     project_name: data.project?.name ?? data.project_name ?? data.case_study?.title ?? "",
@@ -456,16 +481,12 @@ function buildContent(data, input) {
     slide3_title: input.slide3_title ?? "AI가 검토의 출발점을 만들고, 결정은 사람이 합니다",
     field_impact_bullets: input.field_impact_bullets ?? buildFieldImpactBullets(data),
     responsible_use_bullets: input.responsible_use_bullets ?? buildResponsibleUseBullets(data),
-    reflection_social_innovator: socialReflection,
-    reflection_developer: developerReflection,
   };
 }
 
 async function writeExampleInput(inputDir) {
   const examplePath = path.join(inputDir, "presentation-input.example.json");
   await fs.writeFile(examplePath, JSON.stringify({
-    reflection_social_innovator: "",
-    reflection_developer: "",
     slide1_title: "",
     field_problem_bullets: "",
     core_bottleneck_bullets: "",
@@ -485,23 +506,12 @@ async function main() {
   const data = await readProjectData(source);
   const input = await readPresentationInput(source.dir);
   const content = buildContent(data, input);
-  const prompt = buildProblemImagePrompt(data);
+  const problemPrompt = buildProblemImagePrompt(data);
+  const solutionPrompt = buildSolutionImagePrompt(data, content);
   const outDir = path.join(source.dir, "outputs");
   const assetsDir = path.join(source.dir, "presentation-assets");
 
   const missingInputs = [];
-  if (!isRealReflection(input.reflection_social_innovator)) {
-    missingInputs.push({
-      key: "reflection_social_innovator",
-      question: "사회혁신가 입장에서 오늘 알게 된 점을 한 문장으로 알려주세요.",
-    });
-  }
-  if (!isRealReflection(input.reflection_developer)) {
-    missingInputs.push({
-      key: "reflection_developer",
-      question: "개발자 입장에서 이번 실습에서 중요하다고 느낀 점을 한 문장으로 알려주세요.",
-    });
-  }
 
   const missingAssets = [];
   if (!await exists(path.join(assetsDir, "result_screenshot.png"))) {
@@ -511,15 +521,18 @@ async function main() {
       question: "2페이지에 넣을 결과물 캡처 이미지가 있으면 presentation-assets/result_screenshot.png로 넣어주세요.",
     });
   }
-
-  if (args.strict && missingInputs.length > 0) {
-    const questions = missingInputs.map((item) => `- ${item.question}`).join("\n");
-    throw new Error(`발표자료 완성 전에 참가자 회고가 필요합니다.\n\n${questions}`);
+  if (!await exists(path.join(assetsDir, "solution_image.png"))) {
+    missingAssets.push({
+      key: "solution_image",
+      path: path.join(assetsDir, "solution_image.png"),
+      question: "3페이지에 넣을 해결 후 현장 이미지가 없으면 outputs/solution-image-prompt.txt로 생성하세요.",
+    });
   }
 
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, "presentation-placeholder-content.json"), JSON.stringify(content, null, 2));
-  await fs.writeFile(path.join(outDir, "problem-image-prompt.txt"), prompt);
+  await fs.writeFile(path.join(outDir, "problem-image-prompt.txt"), problemPrompt);
+  await fs.writeFile(path.join(outDir, "solution-image-prompt.txt"), solutionPrompt);
   const examplePath = await writeExampleInput(source.dir);
 
   console.log(JSON.stringify({
@@ -528,13 +541,12 @@ async function main() {
     dataSourceType: source.type,
     content: path.join(outDir, "presentation-placeholder-content.json"),
     problemImagePrompt: path.join(outDir, "problem-image-prompt.txt"),
+    solutionImagePrompt: path.join(outDir, "solution-image-prompt.txt"),
     optionalInput: path.join(source.dir, "presentation-input.json"),
     exampleInput: examplePath,
     missingInputs,
     missingAssets,
-    nextAction: missingInputs.length > 0
-      ? "회고를 먼저 질문한 뒤 presentation-input.json에 저장하고 다시 실행하세요."
-      : "최종 Google Slides 템플릿 사본에 placeholder를 채우세요.",
+    nextAction: "최종 Google Slides 템플릿 사본에 placeholder와 이미지를 채우세요.",
   }, null, 2));
 }
 
