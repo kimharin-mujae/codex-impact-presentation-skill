@@ -56,6 +56,120 @@ function shorten(text, max = 34) {
   return `${value.slice(0, max - 1)}…`;
 }
 
+function stripSentenceEnding(text) {
+  return trimEnd(text)
+    .replace(/\s*(입니다|합니다|한다|된다|했다|한다는 점|할 수 있다|할 수 있음|해야 한다|필요하다)$/u, "")
+    .replace(/\s+(때문|상황|문제)$/u, "");
+}
+
+function truncateCleanly(text, max) {
+  const value = compact(text);
+  if (value.length <= max) return value;
+
+  const words = value.split(/\s+/u);
+  if (words.length > 1) {
+    let result = "";
+    for (const word of words) {
+      const next = result ? `${result} ${word}` : word;
+      if (next.length > max) break;
+      result = next;
+    }
+    if (result) return result;
+  }
+
+  return value.slice(0, max).replace(/[^\p{Letter}\p{Number})\]]+$/u, "").trim();
+}
+
+function compactCardLine(text, max = 22) {
+  let value = stripSentenceEnding(text)
+    .replace(/[“”"']/gu, "")
+    .replace(/\s*(?:->|→|>|,|，|;|；)\s*/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+  const replacements = [
+    [/개인정보와 민감 정보/gu, "개인정보·민감정보"],
+    [/개인정보·민감 정보/gu, "개인정보·민감정보"],
+    [/긴급 확인이 필요한\s*/gu, "긴급 "],
+    [/사람이 늦게 발견/u, "발견 지연"],
+    [/늦게 발견/u, "발견 지연"],
+    [/([가-힣A-Za-z0-9·\s]{1,14})가 한꺼번에 제출되는.+/u, "$1 집중 제출"],
+    [/([가-힣A-Za-z0-9·\s]{1,14})이 한꺼번에 제출되는.+/u, "$1 집중 제출"],
+    [/많은\s+(.+)\s+속\s+(.+)\s+지연/u, "$2 지연"],
+    [/최종 판단/u, "최종 판단"],
+    [/최종 결정/u, "최종 결정"],
+    [/출력 금지/u, "제외"],
+  ];
+  for (const [from, to] of replacements) value = value.replace(from, to);
+
+  if (value.length <= max) return value;
+
+  const particles = value.split(/\s+(?:때|에서|으로|로|을|를|이|가|은|는|및|와|과)\s*/u).filter(Boolean);
+  if (particles[0] && particles[0].length <= max) return particles[0];
+
+  return truncateCleanly(value, max);
+}
+
+function cardLines(items, max = 3) {
+  const result = [];
+  const seen = new Set();
+  for (const item of items) {
+    const line = compactCardLine(item);
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    result.push(line);
+    if (result.length >= max) break;
+  }
+  return result.join("\n");
+}
+
+function materialName(text) {
+  const cleaned = trimEnd(text)
+    .replace(/^(담당자|멘토|활동가|코디네이터|사용자|직원|실무자)가 작성한\s*/u, "")
+    .replace(/\s*텍스트\s*/gu, " ")
+    .replace(/(.+?)(?:으로|로)\s+들어온\s+(.+)/u, "$1 $2")
+    .replace(/\s*(문서|자료|데이터|파일)$/u, "")
+    .trim();
+  const value = compactCardLine(cleaned, 14)
+    .replace(/^(담당자|멘토|활동가|코디네이터|사용자|직원|실무자)가 작성한\s*/u, "")
+    .replace(/\s*(문서|자료|데이터|파일)$/u, "")
+    .trim();
+  return value || "현장 자료";
+}
+
+function problemDelayLine(problem, fallback) {
+  const value = compact(problem);
+  const signal = value.match(/([가-힣A-Za-z0-9·\s]{1,16}신호)[^가-힣A-Za-z0-9]*.*(?:늦게 발견|발견.*지연)/u)?.[1];
+  if (signal) {
+    const core = signal.split(/\s*에서\s*/u).pop();
+    return `${compactCardLine(core, 10)} 발견 지연`;
+  }
+
+  const target = value.match(/([가-힣A-Za-z0-9·\s]{1,16})(?:을|를)\s*(?:늦게|반복|직접|수동|일일이)/u)?.[1];
+  if (target) return `${compactCardLine(target, 10)} 처리 지연`;
+
+  if (/누락|놓치/u.test(value)) return "중요 신호 누락 위험";
+  if (/반복|수동|일일이/u.test(value)) return "반복 확인 시간 증가";
+  if (/지연|늦/u.test(value)) return "처리 지연 발생";
+  return compactCardLine(fallback || "문제 발견 지연", 18);
+}
+
+function personRole(text) {
+  const value = compact(text).split(/\s*(?:와|과|및|,|，)\s*/u).find(Boolean) ?? "";
+  const role = compactCardLine(value.replace(/^가장 어려움을 겪는\s*/u, ""), 10);
+  if (!role || /신청|접수|자료|데이터|문서/u.test(role)) return "담당자";
+  return role;
+}
+
+function reviewLine(text) {
+  const value = compact(text);
+  if (/공유 전|전달 전|제출 전/u.test(value)) return "공유 전 사람 검토";
+  if (/근거/u.test(value)) return "근거 확인 후 사용";
+  if (/톤|표현/u.test(value)) return "표현 기준 검토";
+  if (/최종|판단|결정/u.test(value)) return "사람이 최종 판단";
+  return compactCardLine(value || "사람 검토 후 사용", 18);
+}
+
 function firstCount(text) {
   return compact(text).match(/\d+\s*건/u)?.[0]?.replace(/\s+/g, "") ?? "";
 }
@@ -258,39 +372,28 @@ function buildSlide1Title(data) {
   const mvp = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
   const text = `${workflowType} ${problem} ${mvp}`;
 
-  if (/신청서검토|신청서|상담 메모|우선순위/u.test(text)) {
-    return "반복 검토에 묶인 시간을 우선순위 판단으로 돌립니다";
+  if (/일지|멘토링/u.test(text)) {
+    return "놓치기 쉬운 신호를 먼저 볼 순서로 정리합니다";
   }
   if (/제보|분류|라우팅|답변 초안/u.test(text)) {
     return "흩어진 제보를 대응 순서와 답변 초안으로 정리합니다";
   }
-  if (/일지|멘토링/u.test(text)) {
-    return "놓치기 쉬운 신호를 먼저 볼 순서로 정리합니다";
+  if (/신청서검토|신청서|상담 메모|우선순위/u.test(text)) {
+    return "반복 검토에 묶인 시간을 우선순위 판단으로 돌립니다";
   }
   return "반복 업무에 묶인 시간을 현장 판단으로 돌립니다";
 }
 
 function buildFieldProblemBullets(data) {
   const problem = data.problem?.actual_work_problem ?? "";
-  if (/긴급식품지원 신청서와 상담 메모/u.test(problem)) {
-    return lines([
-      "신청서·상담 메모 반복 검토",
-      "긴급도 단서 직접 확인",
-      "우선순위 정리 부담",
-    ]);
-  }
-  if (/제보|분류|답변 초안/u.test(problem)) {
-    return lines([
-      "자유형식 제보 반복 확인",
-      "채널별 접수 누락 위험",
-      "답변 초안 작성 지연",
-    ]);
-  }
+  const input = data.current_workflow?.inputs ?? "";
+  const pain = data.existing_workflow?.current_pain_points ?? data.problem?.blocked_moment ?? "";
+  const role = personRole(data.problem?.people_affected ?? "");
 
-  return lines([
-    shorten(problem, 36),
-    shorten(data.current_workflow?.inputs ?? data.problem?.people_affected ?? "", 32),
-    shorten(data.current_workflow?.steps ?? data.existing_workflow?.current_steps ?? "", 32),
+  return cardLines([
+    `${materialName(input || problem)} 반복 확인`,
+    problemDelayLine(problem, pain),
+    `${role} 판단 부담 증가`,
   ]);
 }
 
@@ -312,8 +415,8 @@ function buildBottleneckBullets(data) {
     ]);
   }
   return lines([
-    shorten(blocked, 34),
-    shorten(pain, 34),
+    compactCardLine(blocked, 18),
+    compactCardLine(pain, 18),
     "판단 기준 공유 어려움",
   ]);
 }
@@ -335,10 +438,10 @@ function buildMvpBullets(data) {
       "확인 질문·답변 초안 생성",
     ]);
   }
-  return lines([
-    shorten(data.mvp?.demo_input ?? "", 32),
-    shorten(data.mvp?.single_feature ?? "", 36),
-    shorten(data.mvp?.demo_output ?? output, 34),
+  return cardLines([
+    `${materialName(data.mvp?.demo_input ?? "")} 입력`,
+    data.mvp?.single_feature ?? "핵심 흐름 자동 정리",
+    data.mvp?.demo_output ?? output,
   ]);
 }
 
@@ -368,24 +471,11 @@ function buildFieldImpactBullets(data) {
 
 function buildResponsibleUseBullets(data) {
   const boundary = data.ai_agent_design?.decision_boundary ?? data.human_in_the_loop?.review_points ?? "";
-  if (/최종 지원 여부/u.test(boundary)) {
-    return lines([
-      "최종 지원 여부는 담당자 결정",
-      "개인정보·민감 정보 출력 금지",
-      "상위 사례 중심으로 근거 확인",
-    ]);
-  }
-  if (/제보|담당 후보|활동가|주민|사유지/u.test(`${boundary} ${data.human_in_the_loop?.review_points ?? ""}`)) {
-    return lines([
-      "담당 후보는 활동가가 확인",
-      "연락처·상세 주소 제거",
-      "사유지/공공영역 판단 검토",
-    ]);
-  }
-  return lines([
-    shorten(boundary || "최종 결정은 담당자 판단", 34),
-    "개인정보·민감 정보 출력 금지",
-    shorten(data.human_in_the_loop?.review_points ?? "근거와 답변 톤 확인", 34),
+  const review = data.human_in_the_loop?.review_points ?? "";
+  return cardLines([
+    /AI/u.test(boundary) ? "AI는 판단 보조까지만" : "최종 결정은 사람 몫",
+    "개인정보·민감정보 제외",
+    reviewLine(review || boundary),
   ]);
 }
 
@@ -393,26 +483,38 @@ function buildProblemImagePrompt(data) {
   const actual = data.problem?.actual_work_problem ?? "";
   const people = data.problem?.people_affected ?? "";
   const moment = data.problem?.blocked_moment ?? "";
+  const inputs = data.current_workflow?.inputs ?? "";
+  const steps = data.current_workflow?.steps ?? "";
+  const pain = data.existing_workflow?.current_pain_points ?? "";
 
-  return `아래 세 가지 답변을 바탕으로, 이 문제가 실제로 발생하는 순간을 한 장의 현실적인 이미지로 표현해줘.
+  return `아래 참가자 입력을 바탕으로, 이 팀의 문제가 실제 현장에서 드러나는 순간을 추론해 한 장의 현실적인 이미지로 표현해줘.
 
 참가자 답변
 
 - 실제 업무 문제: ${actual}
 - 가장 어려움을 겪는 사람: ${people}
 - 문제가 발생하는 순간: ${moment}
+- 입력 자료/현장 단서: ${inputs}
+- 현재 처리 흐름: ${steps}
+- 불편한 지점: ${pain}
 
 이미지 생성 요청
 
-이 이미지는 해결책을 보여주는 것이 아니라, 아직 해결되지 않은 현재의 문제상황을 보여주기 위한 것이다.
+이 이미지는 해결책을 보여주는 것이 아니라, 아직 해결되지 않은 현재의 문제상황을 보여주기 위한 것이다. 입력된 내용을 읽고, 어떤 장소·관계·상황에서 문제가 가장 잘 드러나는지 먼저 판단한 뒤 그 장면을 선택해줘.
 
 다음 요소가 자연스럽게 드러나게 표현해줘.
 
-1. 문제가 발생하는 시간, 장소, 분위기
-2. 가장 어려움을 겪는 사람이 실제로 겪는 부담이나 난감함
-3. 문제를 일으키는 자료, 메시지, 서류, 화면, 현장 상황
-4. 반복, 지연, 혼란, 누락, 대기, 판단 어려움 같은 업무 병목
-5. 왜 이 문제가 해결되어야 하는지 3초 안에 이해되는 장면
+1. 이 팀의 입력에서 드러나는 실제 현장 맥락
+2. 가장 어려움을 겪는 사람이 마주한 부담, 지연, 누락, 혼선, 판단 어려움
+3. 문제의 사회적 맥락과 왜 해결이 필요한지 3초 안에 이해되는 상태
+4. 해결 전 상태임이 분명한 분위기
+5. 특정 소품보다 문제의 원인과 결과가 자연스럽게 보이는 장면
+
+중요한 방향
+
+- 사무실, 책상, 노트북, 서류, 회의, 체크리스트 장면으로 기본값처럼 만들지 말아줘.
+- 그런 요소는 참가자 입력상 반드시 필요할 때만 보조적으로 사용해줘.
+- 팀의 실제 맥락에 더 맞는 현장, 관계, 공간, 상황이 있다면 그것을 우선해줘.
 
 단, 다음은 포함하지 말아줘.
 
@@ -430,15 +532,19 @@ function buildSolutionImagePrompt(data, content) {
   const actual = data.problem?.actual_work_problem ?? "";
   const people = data.problem?.people_affected ?? "";
   const workflow = data.ai_agent_design?.changed_workflow ?? data.mvp?.included_workflow_steps ?? "";
+  const feature = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
+  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
   const impact = content.field_impact_bullets ?? "";
 
-  return `아래 답변과 발표 문구를 바탕으로, 문제가 해결된 뒤 현장에 생긴 긍정적인 모습을 한 장의 현실적인 이미지로 표현해줘.
+  return `아래 참가자 입력과 발표 문구를 바탕으로, 이 팀이 만들려는 MVP가 실제로 작동했을 때 생기는 해결 후 상태를 추론해 한 장의 현실적인 이미지로 표현해줘.
 
 참가자 답변
 
 - 실제 업무 문제: ${actual}
 - 가장 어려움을 겪는 사람: ${people}
+- 핵심 기능: ${feature}
 - 바뀐 업무 흐름: ${workflow}
+- MVP 산출물: ${output}
 
 발표 문구
 
@@ -447,15 +553,22 @@ ${impact}
 
 이미지 생성 요청
 
-이 이미지는 문제상황이 아니라, AI 에이전트 MVP를 현장에서 책임 있게 활용해 업무 흐름이 나아진 모습을 보여주기 위한 것이다.
+이 이미지는 특정 도구 화면이나 정돈된 업무 장면을 보여주기 위한 것이 아니라, 이 MVP가 만들어졌을 때 현장에 생기는 긍정적인 결과 상태를 보여주기 위한 것이다. 입력된 문제, 대상자, 기능, 바뀐 흐름, 산출물을 읽고 어떤 변화가 가장 중요한지 판단한 뒤 그에 맞는 장면을 선택해줘.
 
 다음 요소가 자연스럽게 드러나게 표현해줘.
 
-1. 현장 담당자가 더 차분하게 판단하거나 협업하는 모습
-2. 정리된 자료, 체크리스트, 검토표, 간단한 화면 등 업무가 정돈된 단서
-3. 대기, 누락, 혼란이 줄고 다음 행동이 명확해진 분위기
-4. AI가 결정을 대신하는 장면이 아니라 사람이 최종 판단하는 흐름
+1. 누가 어떤 부담에서 벗어나는지
+2. 어떤 대상자나 현장이 더 빨리, 더 안전하게, 더 적절하게 도움을 받는지
+3. 반복, 지연, 누락, 혼선이 줄어든 결과 상태
+4. AI가 결정을 대신하는 장면이 아니라 사람이 책임 있게 판단하고 행동하는 흐름
 5. 발표자료 3페이지의 회색 이미지 영역에 들어갔을 때 해결 후 변화가 직관적으로 보이는 장면
+
+중요한 방향
+
+- 사무실, 책상, 노트북, 서류, 회의, 체크리스트 장면으로 기본값처럼 만들지 말아줘.
+- 특정 장면을 미리 정하지 말고, 참가자 입력을 바탕으로 이 팀의 사례에 가장 알맞은 현장·관계·결과 상태를 추론해줘.
+- 업무 효율만이 아니라 그 효율이 만들어내는 현장 변화와 사회적 임팩트를 우선해줘.
+- 도구나 화면은 필요할 때만 배경 단서로 작게 사용하고, 장면의 중심은 변화된 상태가 되게 해줘.
 
 단, 다음은 포함하지 말아줘.
 
