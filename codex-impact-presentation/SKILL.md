@@ -18,6 +18,19 @@ Codex Impact Workshop 참가팀이 3분 발표자료를 만들 때 사용한다.
 - 최종 발표자료는 항상 아래 Google Slides 템플릿의 사본에서 시작한다.
 - 발표자 노트는 작성하거나 수정하지 않는다. 이 발표자료는 보이는 슬라이드 3장만 자동채우기 대상이다.
 
+## 필수 실행 순서
+
+아래 순서를 지킨다. 특히 2-3번이 끝나기 전에는 Google Slides 템플릿 사본을 만들지 않는다.
+
+1. 참가자 입력 폴더를 확정한다.
+2. Google Slides 사본에 발표 문구와 이미지를 업로드해도 되는지 사용자에게 확인한다.
+3. 2페이지 결과물 캡처가 있는지 확인한다. 캡처가 없으면 사용자가 “2페이지 캡처는 비워도 됩니다”라고 명시한 경우에만 비운다.
+4. 문구 생성 스크립트를 실행한다.
+5. 없는 문제상황 이미지와 해결된 모습 이미지를 각 1장씩만 생성한다.
+6. Google Slides 템플릿 사본을 만든다.
+7. 텍스트와 지정된 이미지 슬롯만 교체한다.
+8. 남은 placeholder와 썸네일을 확인한다.
+
 ## 스킬용 템플릿
 
 Google Slides placeholder 템플릿:
@@ -46,13 +59,25 @@ https://docs.google.com/presentation/d/1CW9VJj3VqpyoG4th5S8qXHKXfyjAYEbvXoNYbm64
 
 ## 사용자에게 물을 것
 
-발표자료를 만들기 전에 부족한 입력만 짧게 묻는다.
+발표자료를 만들기 전에 반드시 아래 두 가지를 확인한다. 답을 받기 전에는 Google Slides 템플릿 사본을 만들지 않는다.
 
-1. 2페이지 결과물 캡처 이미지를 직접 캡처해서 `presentation-assets/result_screenshot.png`로 넣어줄 수 있는지
-2. 3페이지 해결된 모습 이미지가 이미 있는지
+1. Google Slides 사본에 발표 문구와 이미지를 업로드해도 되는지
+2. 2페이지 결과물 캡처 이미지를 직접 캡처해서 `presentation-assets/result_screenshot.png`로 넣어줄 수 있는지
 
 문제상황 이미지는 없으면 생성할 수 있으므로 필수로 요구하지 않는다.
 해결된 모습 이미지도 없으면 생성할 수 있으므로 필수로 요구하지 않는다.
+
+사용자에게는 아래처럼 짧게 묻는다.
+
+```text
+이 작업은 발표 문구와 생성 이미지를 Google Slides 사본에 업로드합니다.
+진행하려면 “Google Slides에 발표 문구와 이미지를 업로드해도 됩니다”라고 승인해 주세요.
+
+그리고 2페이지 결과물 캡처가 있으면 `presentation-assets/result_screenshot.png`로 넣어주세요.
+바로 준비하기 어렵다면 “2페이지 캡처는 비워도 됩니다”라고 말해 주세요.
+```
+
+사용자가 업로드를 승인하지 않으면 Google Slides 사본을 만들지 않고 멈춘다. 사용자가 2페이지 캡처를 제공하지 않았고 “2페이지 캡처는 비워도 됩니다”라고 명시하지 않았으면 자동으로 비우고 진행하지 않는다.
 
 ## 문구 생성
 
@@ -82,7 +107,7 @@ node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-cont
 우선순위:
 
 1. `presentation-assets/problem_image.png`가 있으면 사용
-2. 없으면 `outputs/problem-image-prompt.txt`로 현실적인 사진 스타일 이미지를 생성
+2. 없으면 `outputs/problem-image-prompt.txt`로 현실적인 사진 스타일 이미지를 최종 후보 1장만 생성
 3. 생성 이미지를 `presentation-assets/problem_image.png`로 저장
 
 이미지는 해결책이 아니라 아직 해결되지 않은 현재 문제상황을 보여줘야 한다. 개인정보, 식별 가능한 얼굴, 완성된 AI 시스템 화면은 피한다.
@@ -94,18 +119,26 @@ node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-cont
 
 1. `presentation-assets/result_screenshot.png`가 있으면 사용
 2. 없으면 실행 가능한 앱이나 화면을 찾지 않고 사용자에게 직접 캡처한 이미지를 요청한다
-3. 사용자가 바로 제공하기 어렵다고 하면 캡처 영역은 비워두고 진행할 수 있다고 알린다
+3. 사용자가 “2페이지 캡처는 비워도 됩니다”라고 명시한 경우에만 캡처 영역을 비운다
 
 ### 해결된 모습 이미지
 
 우선순위:
 
 1. `presentation-assets/solution_image.png`가 있으면 사용
-2. 없으면 `outputs/solution-image-prompt.txt`로 현실적인 사진 스타일 이미지를 생성
+2. 없으면 `outputs/solution-image-prompt.txt`로 현실적인 사진 스타일 이미지를 최종 후보 1장만 생성
 3. 생성 이미지를 `presentation-assets/solution_image.png`로 저장
 
 이미지는 문제가 해결된 뒤 현장 업무가 정돈되고 사람이 책임 있게 최종 판단하는 모습을 보여줘야 한다. 특정 제품 UI, 브랜드 로고, 개인정보, 식별 가능한 얼굴은 피한다.
 프롬프트는 특정 업무 장면이나 도구 화면을 고정하지 않는다. 이 팀의 문제, 대상자, MVP 기능, 바뀐 업무 흐름, 산출물, 현장 변화 문구를 읽고, 실제로 무엇이 좋아졌는지와 그 사회적 임팩트가 보이는 해결 후 상태를 추론하게 한다. 해결 후 이미지는 업무 당사자의 편해진 모습에만 머물지 않고, 가능하면 수혜자·주민·참여자·현장 대상자에게 나타난 더 나은 상태가 함께 드러나야 한다.
+
+### 이미지 생성 시간 제한
+
+- 한 슬롯당 이미지는 1번만 생성한다. 여러 후보를 만들거나 후보를 비교하지 않는다.
+- 생성된 이미지가 대체로 맥락에 맞고 실제 개인정보가 읽히지 않으면 그대로 사용한다.
+- 얼굴이나 문구가 아주 조금 애매하다는 이유로 블러 처리, 후보 재선택, 재생성을 반복하지 않는다.
+- 이미지가 명백히 실패한 경우에도 같은 작업 중 재생성은 최대 1회까지만 허용한다.
+- 이미지가 마음에 들지 않을 수 있으면 완료 후 사용자에게 `presentation-assets/problem_image.png` 또는 `presentation-assets/solution_image.png`만 교체하면 된다고 안내한다.
 
 ### 템플릿 장식 요소
 
@@ -115,10 +148,10 @@ node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-cont
 
 Google Drive/Slides 도구가 가능하면 다음 순서로 작업한다.
 
-1. placeholder 템플릿을 복사한다.
+1. 필수 실행 순서의 승인/캡처 조건이 충족된 뒤에만 placeholder 템플릿을 복사한다.
 2. `outputs/presentation-placeholder-content.json`의 키와 `{{placeholder}}`를 매칭해 텍스트를 바꾼다.
 3. `presentation-assets/problem_image.png`를 1페이지 기존 배경 이미지 슬롯에 `replaceImage`로 넣는다. 새 이미지를 위에 얹지 않는다.
-4. `presentation-assets/result_screenshot.png`가 있으면 2페이지 캡처 영역에 넣는다. 없으면 `{{result_screenshot}}`만 빈 문자열로 치환하고 캡처 영역은 그대로 둔다.
+4. `presentation-assets/result_screenshot.png`가 있으면 2페이지 캡처 영역에 넣는다. 사용자가 비워도 된다고 명시한 경우에만 `{{result_screenshot}}`를 빈 문자열로 치환하고 캡처 영역은 비워둔다.
 5. `presentation-assets/solution_image.png`를 3페이지 해결된 모습 이미지 슬롯에 `replaceImage`로 넣는다.
 6. 삽입 후 슬라이드 텍스트를 다시 읽어 placeholder가 남았는지 확인한다.
 7. 가능하면 Google Slides 커넥터 썸네일로 레이아웃을 확인하고, 넘치는 문장은 더 짧게 다듬는다.
@@ -161,6 +194,7 @@ Google Drive/Slides 도구가 가능하면 다음 순서로 작업한다.
 - 카드 안에는 `->`, `→` 같은 흐름 기호를 넣지 않는다. 흐름은 줄 단위 짧은 개조체로 바꾼다.
 - 카드 본문 각 줄은 가능하면 12~18자 안팎의 명사형/동사형으로 압축한다.
 - 1페이지 카드는 각 3줄 이내로 유지한다.
-- 2페이지 큰 제목은 프로젝트명이 아니라 실습 결과물의 제목으로 쓴다.
+- 2페이지 큰 제목은 단순 산출물명이 아니라, 팀이 만든 MVP/도구가 무엇인지 드러나는 제목으로 쓴다.
+- 가능하면 “무엇을 처리하는 어떤 도구” 형식으로 쓴다. 예: “멘토링 일지 확인 필요 우선순위표 생성 도구”.
 - 2페이지 작동 흐름은 최대 5줄, 산출 결과는 최대 4줄로 유지한다.
 - 3페이지 큰 제목은 고정 문구를 쓰지 않고, “AI가 무엇을 정리·분류·요약하고, 사람은 어떤 판단·대응·연결에 집중하게 되는지”가 드러나도록 생성한다.

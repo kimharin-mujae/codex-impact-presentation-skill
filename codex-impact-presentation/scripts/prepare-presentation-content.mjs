@@ -221,15 +221,29 @@ function firstLine(text) {
 }
 
 function buildSlide2Title(data) {
+  const projectName = data.project?.name ?? data.project_name ?? "";
   const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
   const generated = outputLines(output, 1);
-  if (generated) return firstLine(generated);
+  const outputName = firstLine(generated);
+
+  if (projectName && outputName && !/(도구|에이전트|시스템)$/u.test(projectName)) {
+    return `${projectName} 도구`;
+  }
+  if (projectName && outputName) return projectName;
+
+  if (outputName) {
+    const problem = data.problem?.actual_work_problem ?? "";
+    if (/멘토링|일지/u.test(problem) && /우선순위/u.test(outputName)) {
+      return "멘토링 일지 확인 필요 우선순위표 생성 도구";
+    }
+    return `${outputName} 생성 도구`;
+  }
 
   const feature = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
   const fromFeature = feature.match(/(?:만들|생성|출력|정리)(?:한다|하는)?\s*([가-힣A-Za-z0-9·\s]{2,24})/u)?.[1];
-  if (fromFeature) return compactCardLine(fromFeature, 22);
+  if (fromFeature) return `${compactCardLine(fromFeature, 22)} 도구`;
 
-  return data.project?.name ?? data.project_name ?? "실습 결과물";
+  return projectName || "실습 결과물 생성 도구";
 }
 
 function buildSlide3Title(data, content) {
@@ -520,6 +534,37 @@ function buildResponsibleUseBullets(data) {
   ]);
 }
 
+function splitPeopleAffected(text) {
+  const parts = compact(text)
+    .split(/\s*(?:와|과|및|,|，|\/)\s*/u)
+    .map(trimEnd)
+    .filter(Boolean);
+  return parts;
+}
+
+function inferWorkActor(data) {
+  const people = splitPeopleAffected(data.problem?.people_affected ?? "");
+  const actor = people.find((part) => /담당자|코디네이터|활동가|멘토|복지|기관|실무자|직원|교사|상담사|운영자/u.test(part));
+  return actor || people[0] || "업무를 처리하는 사람";
+}
+
+function inferBeneficiary(data) {
+  const people = splitPeopleAffected(data.problem?.people_affected ?? "");
+  const actor = inferWorkActor(data);
+  const beneficiary = people.find((part) => part !== actor && /청소년|주민|가구|참여자|수혜|신청|아동|학생|어르신|장애|보호자|지역/u.test(part));
+  return beneficiary || people.find((part) => part !== actor) || "도움을 받거나 영향을 받는 사람";
+}
+
+function expectedChangeSummary(content) {
+  const items = String(content.field_impact_bullets ?? "")
+    .split("\n")
+    .map(trimEnd)
+    .filter(Boolean);
+  if (items.length === 0) return "업무 지연과 누락이 줄고 필요한 조치가 더 빠르게 이어진다";
+  if (items.length === 1) return items[0];
+  return items.join(" / ");
+}
+
 function buildProblemImagePrompt(data) {
   const actual = data.problem?.actual_work_problem ?? "";
   const people = data.problem?.people_affected ?? "";
@@ -541,7 +586,7 @@ function buildProblemImagePrompt(data) {
 
 이미지 생성 요청
 
-이 이미지는 해결책을 보여주는 것이 아니라, 아직 해결되지 않은 현재의 문제상황을 보여주기 위한 것이다. 입력된 내용을 읽고, 어떤 장소·관계·상황에서 문제가 가장 잘 드러나는지 먼저 판단한 뒤 그 장면을 선택해줘.
+이 이미지는 해결책을 보여주는 것이 아니라, 아직 해결되지 않은 현재의 문제상황을 보여주기 위한 것이다. 입력된 내용을 읽고, 어떤 장소·관계·상황에서 문제가 가장 잘 드러나는지 먼저 판단한 뒤 최종 이미지 1장만 만들어줘.
 
 다음 요소가 자연스럽게 드러나게 표현해줘.
 
@@ -566,63 +611,51 @@ function buildProblemImagePrompt(data) {
 - 실제 개인정보, 이름, 전화번호, 주소, 주민번호, 얼굴이 특정되는 정보
 - 읽어야 이해되는 긴 문장이나 복잡한 텍스트
 
-현실적인 사진 스타일로, 발표자료에 넣었을 때 문제상황이 직관적으로 보이는 한 장면으로 만들어줘.`;
+현실적인 사진 스타일로, 발표자료에 넣었을 때 문제상황이 직관적으로 보이는 최종 한 장면으로 만들어줘.`;
 }
 
 function buildSolutionImagePrompt(data, content) {
   const actual = data.problem?.actual_work_problem ?? "";
-  const people = data.problem?.people_affected ?? "";
-  const workflow = data.ai_agent_design?.changed_workflow ?? data.mvp?.included_workflow_steps ?? "";
-  const feature = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
-  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
-  const impact = content.field_impact_bullets ?? "";
+  const moment = data.problem?.blocked_moment ?? "";
+  const workActor = inferWorkActor(data);
+  const beneficiary = inferBeneficiary(data);
+  const change = expectedChangeSummary(content);
 
-  return `아래 참가자 입력과 발표 문구를 바탕으로, 이 팀이 만들려는 MVP가 실제로 작동했을 때 생기는 해결 후 상태를 추론해 한 장의 현실적인 이미지로 표현해줘.
+  return `아래 내용을 바탕으로, 문제가 해결된 뒤의 상황을 최종 후보 1장의 현실적인 이미지로 표현해 주세요.
 
-참가자 답변
+이 이미지는 문제 상황을 보여주는 것이 아니라,
+업무 흐름이 개선된 이후 업무당사자와 수혜자가 더 편안하고 자연스럽게 연결되는 장면을 보여주기 위한 것입니다.
 
-- 실제 업무 문제: ${actual}
-- 가장 어려움을 겪는 사람: ${people}
-- 핵심 기능: ${feature}
-- 바뀐 업무 흐름: ${workflow}
-- MVP 산출물: ${output}
+입력 정보
 
-발표 문구
+* 해결하고 싶은 실제 업무 문제와 맥락: ${actual}${moment ? ` 특히 ${moment}처럼 업무가 몰리거나 지연되기 쉬운 순간에 문제가 두드러진다.` : ""}
+* 업무를 처리하는 사람: ${workActor}
+* 도움을 받거나 영향을 받는 사람: ${beneficiary}
+* 개선 후 기대되는 변화: ${change}
 
-- 현장 변화:
-${impact}
+이미지 방향
 
-이미지 생성 요청
+* 분위기는 밝고 차분하며, 안도감과 정리된 느낌이 나야 합니다.
+* 업무당사자와 수혜자가 서로 분리되어 있지 않고, 같은 흐름 안에서 자연스럽게 연결되어 보여야 합니다.
+* 도움이나 처리가 더 빠르고 편안하게 이어지는 상태를 사람들의 자세, 시선, 거리감, 공간 분위기, 상호작용으로 표현해 주세요.
+* 한국어/국내 맥락처럼 자연스럽게 보이되, 읽을 수 있는 글자나 영어 포스터는 넣지 마세요.
+* 수혜자는 배경에 혼자 떨어져 있지 않고, 업무당사자와 같은 상호작용 안에서 장면의 한 축으로 보여야 합니다.
+* 실제 얼굴이 식별되지 않도록 해 주세요. 단, 사람들을 모두 뒷모습으로만 표현하지 말고, 옆모습, 손동작, 시선 방향, 열린 자세 등으로 긍정적인 상호작용이 느껴지게 해 주세요.
+* 문서나 화면은 중심이 아니라 보조 단서로만 작게 표현해 주세요.
+* 화면, 문서, 자료가 등장해도 실제 이름, 연락처, 주소, 기관명, 학교명, 민감한 내용, 읽을 수 있는 개인정보는 절대 보이지 않게 해 주세요.
 
-이 이미지는 특정 도구 화면이나 정돈된 업무 장면을 보여주기 위한 것이 아니라, 이 MVP가 만들어졌을 때 현장에 생기는 긍정적인 결과 상태를 보여주기 위한 것이다. 입력된 문제, 대상자, 기능, 바뀐 흐름, 산출물을 읽고 어떤 변화가 가장 중요한지 판단한 뒤 그에 맞는 장면을 선택해줘.
+피해야 할 것
 
-해결 후 장면의 중심은 단순히 업무 당사자가 편해진 모습이 아니라, 그 업무 개선이 수혜자·주민·참여자·현장 대상자에게 어떤 더 나은 상태로 이어졌는지여야 한다. 업무 당사자는 변화가 일어나도록 돕는 사람으로 함께 보여줄 수 있지만, 장면 전체가 업무 테이블이나 회의 장면에 머물러서는 안 된다.
+* 문제가 아직 해결되지 않은 것처럼 보이는 장면
+* 읽을 수 있는 글자, 영어 포스터, 기관 표어, 안내문이 눈에 띄는 장면
+* 실제 개인정보나 민감한 문장이 읽히는 화면 또는 문서
+* 특정 숫자, 실제 기관명, 실제 이름이 보이는 장면
 
-다음 요소가 자연스럽게 드러나게 표현해줘.
+핵심 의도
 
-1. 누가 어떤 부담에서 벗어나는지
-2. 어떤 대상자나 현장이 더 빨리, 더 안전하게, 더 적절하게 도움을 받는지
-3. 반복, 지연, 누락, 혼선이 줄어든 결과 상태
-4. AI가 결정을 대신하는 장면이 아니라 사람이 책임 있게 판단하고 행동하는 흐름
-5. 발표자료 3페이지의 회색 이미지 영역에 들어갔을 때 해결 후 변화가 직관적으로 보이는 장면
-
-중요한 방향
-
-- 사무실, 책상, 노트북, 서류, 회의, 체크리스트 장면으로 기본값처럼 만들지 말아줘.
-- 특정 장면을 미리 정하지 말고, 참가자 입력을 바탕으로 이 팀의 사례에 가장 알맞은 현장·관계·결과 상태를 추론해줘.
-- 업무 효율만이 아니라 그 효율이 만들어내는 현장 변화와 사회적 임팩트를 우선해줘.
-- 도구나 화면은 필요할 때만 배경 단서로 작게 사용하고, 장면의 중심은 변화된 상태가 되게 해줘.
-- 문제상황 이미지와 비슷한 구도의 책상/문서/담당자 장면을 반복하지 말고, 해결 후에는 수혜자나 영향을 받는 현장의 변화가 더 분명히 보이게 해줘.
-
-단, 다음은 포함하지 말아줘.
-
-- 특정 제품 UI나 브랜드 로고
-- 실제 개인정보, 이름, 전화번호, 주소, 주민번호, 식별 가능한 얼굴
-- AI가 사람을 대체하거나 최종 결정을 내리는 장면
-- 과장된 미래도시, 로봇, SF적 장면
-- 읽어야 이해되는 긴 문장이나 복잡한 텍스트
-
-현실적인 사진 스타일로, 따뜻하지만 과장되지 않게 만들어줘.`;
+이 이미지의 중심은 “문제를 겪는 사람”이 아니라,
+개선된 흐름 덕분에 사람들이 더 빠르고 편안하게 연결되는 상태입니다.
+여러 후보를 만들지 말고 발표자료에 바로 넣을 최종 이미지 1장만 만들어 주세요.`;
 }
 
 function buildContent(data, input) {
@@ -672,21 +705,29 @@ async function main() {
   const outDir = path.join(source.dir, "outputs");
   const assetsDir = path.join(source.dir, "presentation-assets");
 
-  const missingInputs = [];
-
-  const missingAssets = [];
+  const optionalAssets = [];
+  const generatedAssets = [];
   if (!await exists(path.join(assetsDir, "result_screenshot.png"))) {
-    missingAssets.push({
+    optionalAssets.push({
       key: "result_screenshot",
       path: path.join(assetsDir, "result_screenshot.png"),
-      question: "2페이지에 넣을 결과물 화면을 직접 캡처해서 presentation-assets/result_screenshot.png로 넣어주세요. 바로 준비하기 어렵다면 캡처 영역은 비워두고 진행할 수 있습니다.",
+      question: "2페이지 결과물 캡처가 있으면 presentation-assets/result_screenshot.png로 넣어주세요. 없으면 사용자가 '2페이지 캡처는 비워도 됩니다'라고 명시한 경우에만 비웁니다.",
+    });
+  }
+  if (!await exists(path.join(assetsDir, "problem_image.png"))) {
+    generatedAssets.push({
+      key: "problem_image",
+      path: path.join(assetsDir, "problem_image.png"),
+      prompt: path.join(outDir, "problem-image-prompt.txt"),
+      action: "1페이지 문제상황 이미지는 없으면 이 프롬프트로 최종 후보 1장만 생성합니다.",
     });
   }
   if (!await exists(path.join(assetsDir, "solution_image.png"))) {
-    missingAssets.push({
+    generatedAssets.push({
       key: "solution_image",
       path: path.join(assetsDir, "solution_image.png"),
-      question: "3페이지에 넣을 해결 후 현장 이미지가 없으면 outputs/solution-image-prompt.txt로 생성하세요.",
+      prompt: path.join(outDir, "solution-image-prompt.txt"),
+      action: "3페이지 해결 후 현장 이미지는 없으면 이 프롬프트로 최종 후보 1장만 생성합니다.",
     });
   }
 
@@ -705,8 +746,8 @@ async function main() {
     solutionImagePrompt: path.join(outDir, "solution-image-prompt.txt"),
     optionalInput: path.join(source.dir, "presentation-input.json"),
     exampleInput: examplePath,
-    missingInputs,
-    missingAssets,
+    optionalAssets,
+    generatedAssets,
     nextAction: "최종 Google Slides 템플릿 사본에 placeholder와 이미지를 채우세요.",
   }, null, 2));
 }
