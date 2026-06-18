@@ -240,21 +240,21 @@ function buildSlide3Title(data, content) {
   const context = `${output} ${problem} ${people}`;
 
   if (/제보|분류|답변/u.test(context)) {
-    return "놓칠 수 있는 제보를 책임 있는 대응으로 연결합니다";
+    return "AI가 제보를 분류하고, 사람은 책임 있게 답합니다";
   }
   if (/식품|지원|신청|복지/u.test(context)) {
-    return "긴급한 신청을 필요한 지원으로 연결합니다";
+    return "AI가 긴급도 근거를 정리하고, 사람은 지원을 판단합니다";
   }
   if (/멘토링|청소년|일지|위험|신호/u.test(context)) {
-    return "먼저 봐야 할 신호를 필요한 도움으로 연결합니다";
+    return "AI가 위험 신호를 정리하고, 사람은 필요한 도움을 판단합니다";
   }
   if (/우선순위|긴급/u.test(context)) {
-    return "먼저 볼 대상을 현장 판단으로 연결합니다";
+    return "AI가 우선순위를 정리하고, 사람은 현장 판단에 집중합니다";
   }
   if (impact) {
-    return `${compactCardLine(impact, 20)}하고, 현장 대응으로 연결합니다`;
+    return `AI가 반복 단서를 정리하고, 사람은 ${compactCardLine(impact, 10)}합니다`;
   }
-  return "반복 업무의 시간을 현장 변화로 돌립니다";
+  return "AI가 반복 업무를 정리하고, 사람은 현장 판단에 집중합니다";
 }
 
 async function sourceFilesIn(dir) {
