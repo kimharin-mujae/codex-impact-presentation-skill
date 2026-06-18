@@ -216,6 +216,47 @@ function outputLines(text, max = 4) {
   return splitList(raw).slice(0, max).join("\n");
 }
 
+function firstLine(text) {
+  return String(text ?? "").split("\n").map(trimEnd).find(Boolean) ?? "";
+}
+
+function buildSlide2Title(data) {
+  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
+  const generated = outputLines(output, 1);
+  if (generated) return firstLine(generated);
+
+  const feature = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
+  const fromFeature = feature.match(/(?:만들|생성|출력|정리)(?:한다|하는)?\s*([가-힣A-Za-z0-9·\s]{2,24})/u)?.[1];
+  if (fromFeature) return compactCardLine(fromFeature, 22);
+
+  return data.project?.name ?? data.project_name ?? "실습 결과물";
+}
+
+function buildSlide3Title(data, content) {
+  const impact = firstLine(content.field_impact_bullets);
+  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
+  const problem = data.problem?.actual_work_problem ?? "";
+  const people = data.problem?.people_affected ?? "";
+  const context = `${output} ${problem} ${people}`;
+
+  if (/제보|분류|답변/u.test(context)) {
+    return "놓칠 수 있는 제보를 책임 있는 대응으로 연결합니다";
+  }
+  if (/식품|지원|신청|복지/u.test(context)) {
+    return "긴급한 신청을 필요한 지원으로 연결합니다";
+  }
+  if (/멘토링|청소년|일지|위험|신호/u.test(context)) {
+    return "먼저 봐야 할 신호를 필요한 도움으로 연결합니다";
+  }
+  if (/우선순위|긴급/u.test(context)) {
+    return "먼저 볼 대상을 현장 판단으로 연결합니다";
+  }
+  if (impact) {
+    return `${compactCardLine(impact, 20)}하고, 현장 대응으로 연결합니다`;
+  }
+  return "반복 업무의 시간을 현장 변화로 돌립니다";
+}
+
 async function sourceFilesIn(dir) {
   const files = {
     inputJson: path.join(dir, "input.json"),
@@ -555,6 +596,8 @@ ${impact}
 
 이 이미지는 특정 도구 화면이나 정돈된 업무 장면을 보여주기 위한 것이 아니라, 이 MVP가 만들어졌을 때 현장에 생기는 긍정적인 결과 상태를 보여주기 위한 것이다. 입력된 문제, 대상자, 기능, 바뀐 흐름, 산출물을 읽고 어떤 변화가 가장 중요한지 판단한 뒤 그에 맞는 장면을 선택해줘.
 
+해결 후 장면의 중심은 단순히 업무 당사자가 편해진 모습이 아니라, 그 업무 개선이 수혜자·주민·참여자·현장 대상자에게 어떤 더 나은 상태로 이어졌는지여야 한다. 업무 당사자는 변화가 일어나도록 돕는 사람으로 함께 보여줄 수 있지만, 장면 전체가 업무 테이블이나 회의 장면에 머물러서는 안 된다.
+
 다음 요소가 자연스럽게 드러나게 표현해줘.
 
 1. 누가 어떤 부담에서 벗어나는지
@@ -569,6 +612,7 @@ ${impact}
 - 특정 장면을 미리 정하지 말고, 참가자 입력을 바탕으로 이 팀의 사례에 가장 알맞은 현장·관계·결과 상태를 추론해줘.
 - 업무 효율만이 아니라 그 효율이 만들어내는 현장 변화와 사회적 임팩트를 우선해줘.
 - 도구나 화면은 필요할 때만 배경 단서로 작게 사용하고, 장면의 중심은 변화된 상태가 되게 해줘.
+- 문제상황 이미지와 비슷한 구도의 책상/문서/담당자 장면을 반복하지 말고, 해결 후에는 수혜자나 영향을 받는 현장의 변화가 더 분명히 보이게 해줘.
 
 단, 다음은 포함하지 말아줘.
 
@@ -589,10 +633,13 @@ function buildContent(data, input) {
     field_problem_bullets: input.field_problem_bullets ?? buildFieldProblemBullets(data),
     core_bottleneck_bullets: input.core_bottleneck_bullets ?? buildBottleneckBullets(data),
     mvp_scope_bullets: input.mvp_scope_bullets ?? buildMvpBullets(data),
+    slide2_title: input.slide2_title ?? buildSlide2Title(data),
     workflow_steps: input.workflow_steps ?? flowLines(data.mvp?.included_workflow_steps ?? data.ai_agent_design?.changed_workflow ?? "", 5),
     output_items: input.output_items ?? outputLines(data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "", 4),
-    slide3_title: input.slide3_title ?? "AI가 검토의 출발점을 만들고, 결정은 사람이 합니다",
     field_impact_bullets: input.field_impact_bullets ?? buildFieldImpactBullets(data),
+    slide3_title: input.slide3_title ?? buildSlide3Title(data, {
+      field_impact_bullets: input.field_impact_bullets ?? buildFieldImpactBullets(data),
+    }),
     responsible_use_bullets: input.responsible_use_bullets ?? buildResponsibleUseBullets(data),
   };
 }
@@ -604,6 +651,7 @@ async function writeExampleInput(inputDir) {
     field_problem_bullets: "",
     core_bottleneck_bullets: "",
     mvp_scope_bullets: "",
+    slide2_title: "",
     workflow_steps: "",
     output_items: "",
     slide3_title: "",
