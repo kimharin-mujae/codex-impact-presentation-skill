@@ -2,17 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const CWD = process.cwd();
-function parseArgs(argv) {
-  const args = {
-    inputDir: null,
-    strict: false,
-  };
 
+function parseArgs(argv) {
+  const args = { inputDir: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--strict") {
-      args.strict = true;
-    } else if (arg === "--input-dir") {
+    if (arg === "--input-dir") {
       args.inputDir = argv[i + 1] ?? "";
       i += 1;
     } else if (arg.startsWith("--input-dir=")) {
@@ -21,7 +16,6 @@ function parseArgs(argv) {
       args.inputDir = arg;
     }
   }
-
   return args;
 }
 
@@ -42,289 +36,37 @@ async function readJson(filePath) {
   return JSON.parse(await readText(filePath));
 }
 
-function compact(text) {
-  return String(text ?? "").replace(/\s+/g, " ").trim();
+function compact(value) {
+  return String(value ?? "").replace(/\s+/gu, " ").trim();
 }
 
-function trimEnd(text) {
-  return compact(text).replace(/[.。]$/u, "");
+function cleanEnd(value) {
+  return compact(value).replace(/[.。]$/u, "");
 }
 
-function shorten(text, max = 34) {
-  const value = trimEnd(text);
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 1)}…`;
-}
-
-function stripSentenceEnding(text) {
-  return trimEnd(text)
-    .replace(/\s*(입니다|합니다|한다|된다|했다|한다는 점|할 수 있다|할 수 있음|해야 한다|필요하다)$/u, "")
-    .replace(/\s+(때문|상황|문제)$/u, "");
-}
-
-function truncateCleanly(text, max) {
-  const value = compact(text);
-  if (value.length <= max) return value;
-
-  const words = value.split(/\s+/u);
-  if (words.length > 1) {
-    let result = "";
-    for (const word of words) {
-      const next = result ? `${result} ${word}` : word;
-      if (next.length > max) break;
-      result = next;
-    }
-    if (result) return result;
+function truncate(value, max) {
+  const text = cleanEnd(value);
+  if (text.length <= max) return text;
+  const words = text.split(/\s+/u);
+  let result = "";
+  for (const word of words) {
+    const next = result ? `${result} ${word}` : word;
+    if (next.length > max) break;
+    result = next;
   }
-
-  return value.slice(0, max).replace(/[^\p{Letter}\p{Number})\]]+$/u, "").trim();
+  return result || text.slice(0, max).replace(/[^\p{Letter}\p{Number})\]]+$/u, "").trim();
 }
 
-function compactCardLine(text, max = 22) {
-  let value = stripSentenceEnding(text)
-    .replace(/[“”"']/gu, "")
-    .replace(/\s*(?:->|→|>|,|，|;|；)\s*/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-
-  const replacements = [
-    [/개인정보와 민감 정보/gu, "개인정보·민감정보"],
-    [/개인정보·민감 정보/gu, "개인정보·민감정보"],
-    [/긴급 확인이 필요한\s*/gu, "긴급 "],
-    [/사람이 늦게 발견/u, "발견 지연"],
-    [/늦게 발견/u, "발견 지연"],
-    [/([가-힣A-Za-z0-9·\s]{1,14})가 한꺼번에 제출되는.+/u, "$1 집중 제출"],
-    [/([가-힣A-Za-z0-9·\s]{1,14})이 한꺼번에 제출되는.+/u, "$1 집중 제출"],
-    [/많은\s+(.+)\s+속\s+(.+)\s+지연/u, "$2 지연"],
-    [/최종 판단/u, "최종 판단"],
-    [/최종 결정/u, "최종 결정"],
-    [/출력 금지/u, "제외"],
-  ];
-  for (const [from, to] of replacements) value = value.replace(from, to);
-
-  if (value.length <= max) return value;
-
-  const particles = value.split(/\s+(?:때|에서|으로|로|을|를|이|가|은|는|및|와|과)\s*/u).filter(Boolean);
-  if (particles[0] && particles[0].length <= max) return particles[0];
-
-  return truncateCleanly(value, max);
+function mdValue(text, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`-\\s*${escaped}:\\s*(.+)`, "u"));
+  return match?.[1]?.trim() ?? "";
 }
 
-function cardLines(items, max = 3) {
-  const result = [];
-  const seen = new Set();
-  for (const item of items) {
-    const line = compactCardLine(item);
-    if (!line || seen.has(line)) continue;
-    seen.add(line);
-    result.push(line);
-    if (result.length >= max) break;
-  }
-  return result.join("\n");
-}
-
-function materialName(text) {
-  const cleaned = trimEnd(text)
-    .replace(/^(담당자|멘토|활동가|코디네이터|사용자|직원|실무자)가 작성한\s*/u, "")
-    .replace(/\s*텍스트\s*/gu, " ")
-    .replace(/(.+?)(?:으로|로)\s+들어온\s+(.+)/u, "$1 $2")
-    .replace(/\s*(문서|자료|데이터|파일)$/u, "")
-    .trim();
-  const value = compactCardLine(cleaned, 14)
-    .replace(/^(담당자|멘토|활동가|코디네이터|사용자|직원|실무자)가 작성한\s*/u, "")
-    .replace(/\s*(문서|자료|데이터|파일)$/u, "")
-    .trim();
-  return value || "현장 자료";
-}
-
-function problemDelayLine(problem, fallback) {
-  const value = compact(problem);
-  const signal = value.match(/([가-힣A-Za-z0-9·\s]{1,16}신호)[^가-힣A-Za-z0-9]*.*(?:늦게 발견|발견.*지연)/u)?.[1];
-  if (signal) {
-    const core = signal.split(/\s*에서\s*/u).pop();
-    return `${compactCardLine(core, 10)} 발견 지연`;
-  }
-
-  const target = value.match(/([가-힣A-Za-z0-9·\s]{1,16})(?:을|를)\s*(?:늦게|반복|직접|수동|일일이)/u)?.[1];
-  if (target) return `${compactCardLine(target, 10)} 처리 지연`;
-
-  if (/누락|놓치/u.test(value)) return "중요 신호 누락 위험";
-  if (/반복|수동|일일이/u.test(value)) return "반복 확인 시간 증가";
-  if (/지연|늦/u.test(value)) return "처리 지연 발생";
-  return compactCardLine(fallback || "문제 발견 지연", 18);
-}
-
-function personRole(text) {
-  const value = compact(text).split(/\s*(?:와|과|및|,|，)\s*/u).find(Boolean) ?? "";
-  const role = compactCardLine(value.replace(/^가장 어려움을 겪는\s*/u, ""), 10);
-  if (!role || /신청|접수|자료|데이터|문서/u.test(role)) return "담당자";
-  return role;
-}
-
-function reviewLine(text) {
-  const value = compact(text);
-  if (/공유 전|전달 전|제출 전/u.test(value)) return "공유 전 사람 검토";
-  if (/근거/u.test(value)) return "근거 확인 후 사용";
-  if (/톤|표현/u.test(value)) return "표현 기준 검토";
-  if (/최종|판단|결정/u.test(value)) return "사람이 최종 판단";
-  return compactCardLine(value || "사람 검토 후 사용", 18);
-}
-
-function firstCount(text) {
-  return compact(text).match(/\d+\s*건/u)?.[0]?.replace(/\s+/g, "") ?? "";
-}
-
-function lines(items, max = 3) {
-  return items.map(trimEnd).filter(Boolean).slice(0, max).join("\n");
-}
-
-function splitList(text) {
-  return compact(text)
-    .split(/\s*(?:->|→|>|,|，|및|와|과)\s*/u)
-    .map(trimEnd)
-    .filter(Boolean);
-}
-
-function flowLines(text, max = 5) {
-  return splitList(text)
-    .map((step) => step
-      .replace(/^AI가\s*/u, "")
-      .replace(/^담당자가\s*/u, "")
-      .replace(/우선순위 검토표 출력/u, "검토표 출력")
-      .replace(/누락 정보와 담당자 확인 질문 생성/u, "확인 질문 생성"))
-    .filter(Boolean)
-    .slice(0, max)
-    .join("\n");
-}
-
-function outputLines(text, max = 4) {
-  const raw = trimEnd(text)
-    .replace(/^우선순위 검토표:\s*/u, "")
-    .replace(/접수 ID,\s*/u, "")
-    .replace(/AI 판단 신뢰도,\s*/u, "")
-    .replace(/사람 검토 메모 칸이 있는\s*/u, "");
-
-  if (/우선순위/u.test(raw) && /담당자 질문|확인 질문/u.test(raw)) {
-    return lines([
-      "우선순위 검토표",
-      "건별 근거 요약",
-      "담당자 확인 질문",
-      "사람 검토 메모 칸",
-    ], max);
-  }
-
-  return splitList(raw).slice(0, max).join("\n");
-}
-
-function firstLine(text) {
-  return String(text ?? "").split("\n").map(trimEnd).find(Boolean) ?? "";
-}
-
-function buildSlide2Title(data) {
-  const projectName = data.project?.name ?? data.project_name ?? "";
-  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
-  const generated = outputLines(output, 1);
-  const outputName = firstLine(generated);
-
-  if (projectName && outputName && !/(도구|에이전트|시스템)$/u.test(projectName)) {
-    return `${projectName} 도구`;
-  }
-  if (projectName && outputName) return projectName;
-
-  if (outputName) {
-    const problem = data.problem?.actual_work_problem ?? "";
-    if (/멘토링|일지/u.test(problem) && /우선순위/u.test(outputName)) {
-      return "멘토링 일지 확인 필요 우선순위표 생성 도구";
-    }
-    return `${outputName} 생성 도구`;
-  }
-
-  const feature = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
-  const fromFeature = feature.match(/(?:만들|생성|출력|정리)(?:한다|하는)?\s*([가-힣A-Za-z0-9·\s]{2,24})/u)?.[1];
-  if (fromFeature) return `${compactCardLine(fromFeature, 22)} 도구`;
-
-  return projectName || "실습 결과물 생성 도구";
-}
-
-function buildSlide3Title(data, content) {
-  const impact = firstLine(content.field_impact_bullets);
-  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
-  const problem = data.problem?.actual_work_problem ?? "";
-  const people = data.problem?.people_affected ?? "";
-  const context = `${output} ${problem} ${people}`;
-
-  if (/제보|분류|답변/u.test(context)) {
-    return "AI가 제보를 분류하고, 사람은 책임 있게 답합니다";
-  }
-  if (/식품|지원|신청|복지/u.test(context)) {
-    return "AI가 긴급도 근거를 정리하고, 사람은 지원을 판단합니다";
-  }
-  if (/멘토링|청소년|일지|위험|신호/u.test(context)) {
-    return "AI가 위험 신호를 정리하고, 사람은 필요한 도움을 판단합니다";
-  }
-  if (/우선순위|긴급/u.test(context)) {
-    return "AI가 우선순위를 정리하고, 사람은 현장 판단에 집중합니다";
-  }
-  if (impact) {
-    return `AI가 반복 단서를 정리하고, 사람은 ${compactCardLine(impact, 10)}합니다`;
-  }
-  return "AI가 반복 업무를 정리하고, 사람은 현장 판단에 집중합니다";
-}
-
-async function sourceFilesIn(dir) {
-  const files = {
-    inputJson: path.join(dir, "input.json"),
-    workshopJson: path.join(dir, "workshop.json"),
-    planMd: path.join(dir, "PLAN.md"),
-    workflowMd: path.join(dir, "WORKFLOW_ANALYSIS.md"),
-    caseStudyMd: path.join(dir, "CASE_STUDY.md"),
-  };
-
-  if (await exists(files.inputJson)) return { dir, sourcePath: files.inputJson, type: "input.json" };
-  if (await exists(files.workshopJson)) return { dir, sourcePath: files.workshopJson, type: "workshop.json" };
-  if (await exists(files.planMd)) return { dir, sourcePath: files.planMd, type: "markdown" };
-  return null;
-}
-
-async function findSourceCandidates(baseDir) {
-  const candidates = [];
-  const current = await sourceFilesIn(baseDir);
-  if (current) candidates.push(current);
-
-  const entries = await fs.readdir(baseDir, { withFileTypes: true });
-  const skip = new Set([".git", ".codex", ".agents", "node_modules", "outputs", "presentation-assets"]);
-  for (const entry of entries) {
-    if (!entry.isDirectory() || skip.has(entry.name)) continue;
-    const candidate = await sourceFilesIn(path.join(baseDir, entry.name));
-    if (candidate) candidates.push(candidate);
-  }
-
-  return candidates;
-}
-
-async function resolveInputDir(args) {
-  if (args.inputDir) {
-    const inputDir = path.resolve(CWD, args.inputDir);
-    const source = await sourceFilesIn(inputDir);
-    if (!source) {
-      throw new Error(`${inputDir}에서 input.json, workshop.json, PLAN.md 중 하나를 찾을 수 없습니다.`);
-    }
-    return source;
-  }
-
-  const candidates = await findSourceCandidates(CWD);
-  if (candidates.length === 0) {
-    throw new Error("현재 폴더에서 발표자료 입력 파일을 찾을 수 없습니다. input.json 또는 workshop.json이 있는 참가자 폴더에서 실행하세요.");
-  }
-
-  if (candidates.length > 1) {
-    const list = candidates
-      .map((candidate) => `- ${path.relative(CWD, candidate.dir) || "."} (${candidate.type})`)
-      .join("\n");
-    throw new Error(`입력 후보가 여러 개입니다. 잘못된 샘플을 읽지 않도록 참가자 폴더를 명시하세요.\n\n${list}\n\n예: node ~/.codex/skills/codex-impact-presentation/scripts/prepare-presentation-content.mjs --input-dir test`);
-  }
-
-  return candidates[0];
+function section(text, title) {
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`##\\s*${escaped}\\s+([^#]+)`, "u"));
+  return compact(match?.[1] ?? "");
 }
 
 function extractFrontmatter(text) {
@@ -340,20 +82,51 @@ function extractFrontmatter(text) {
   return result;
 }
 
-function mdValue(text, label) {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = text.match(new RegExp(`-\\s*${escaped}:\\s*(.+)`, "u"));
-  return match?.[1]?.trim() ?? "";
+async function sourceFilesIn(dir) {
+  const files = {
+    inputJson: path.join(dir, "input.json"),
+    workshopJson: path.join(dir, "workshop.json"),
+    planMd: path.join(dir, "PLAN.md"),
+  };
+  if (await exists(files.inputJson)) return { dir, sourcePath: files.inputJson, type: "input.json" };
+  if (await exists(files.workshopJson)) return { dir, sourcePath: files.workshopJson, type: "workshop.json" };
+  if (await exists(files.planMd)) return { dir, sourcePath: files.planMd, type: "markdown" };
+  return null;
+}
+
+async function findSourceCandidates(baseDir) {
+  const candidates = [];
+  const current = await sourceFilesIn(baseDir);
+  if (current) candidates.push(current);
+  const skip = new Set([".git", ".codex", ".agents", "node_modules", "outputs", "presentation-assets"]);
+  for (const entry of await fs.readdir(baseDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || skip.has(entry.name)) continue;
+    const candidate = await sourceFilesIn(path.join(baseDir, entry.name));
+    if (candidate) candidates.push(candidate);
+  }
+  return candidates;
+}
+
+async function resolveInputDir(args) {
+  if (args.inputDir) {
+    const inputDir = path.resolve(CWD, args.inputDir);
+    const source = await sourceFilesIn(inputDir);
+    if (!source) throw new Error(`${inputDir}에서 input.json, workshop.json, PLAN.md 중 하나를 찾을 수 없습니다.`);
+    return source;
+  }
+  const candidates = await findSourceCandidates(CWD);
+  if (candidates.length === 0) throw new Error("현재 폴더에서 발표자료 입력 파일을 찾을 수 없습니다.");
+  if (candidates.length > 1) {
+    const list = candidates.map((candidate) => `- ${path.relative(CWD, candidate.dir) || "."} (${candidate.type})`).join("\n");
+    throw new Error(`입력 후보가 여러 개입니다. 참가자 폴더를 명시하세요.\n\n${list}`);
+  }
+  return candidates[0];
 }
 
 async function readMarkdownData(inputDir) {
-  const planPath = path.join(inputDir, "PLAN.md");
-  const workflowPath = path.join(inputDir, "WORKFLOW_ANALYSIS.md");
-  const caseStudyPath = path.join(inputDir, "CASE_STUDY.md");
-
-  const plan = await exists(planPath) ? await readText(planPath) : "";
-  const workflow = await exists(workflowPath) ? await readText(workflowPath) : "";
-  const caseStudy = await exists(caseStudyPath) ? await readText(caseStudyPath) : "";
+  const plan = await exists(path.join(inputDir, "PLAN.md")) ? await readText(path.join(inputDir, "PLAN.md")) : "";
+  const workflow = await exists(path.join(inputDir, "WORKFLOW_ANALYSIS.md")) ? await readText(path.join(inputDir, "WORKFLOW_ANALYSIS.md")) : "";
+  const caseStudy = await exists(path.join(inputDir, "CASE_STUDY.md")) ? await readText(path.join(inputDir, "CASE_STUDY.md")) : "";
   const frontmatter = extractFrontmatter(plan || workflow || caseStudy);
 
   return {
@@ -362,335 +135,278 @@ async function readMarkdownData(inputDir) {
       social_innovator: mdValue(plan, "사회혁신가"),
       developer: mdValue(plan, "개발자"),
     },
-    project: {
-      name: frontmatter.project_name ?? "",
-    },
+    project: { name: frontmatter.project_name ?? "" },
     problem: {
-      actual_work_problem: mdValue(plan, "실제 업무 문제") || compact(caseStudy.match(/## 문제 요약\s+([^#]+)/u)?.[1] ?? ""),
+      actual_work_problem: mdValue(plan, "실제 업무 문제") || section(caseStudy, "문제 요약"),
       people_affected: mdValue(plan, "가장 어려움을 겪는 사람"),
       blocked_moment: mdValue(plan, "문제가 발생하는 순간"),
     },
     current_workflow: {
       inputs: mdValue(plan, "입력 자료"),
       steps: mdValue(plan, "처리 순서"),
-      judgment: mdValue(plan, "판단 기준"),
-      outputs: mdValue(plan, "현재 산출물"),
     },
     mvp: {
-      problem_slice: mdValue(plan, "해결할 좁은 문제"),
       single_feature: mdValue(plan, "핵심 기능 1개"),
       included_workflow_steps: mdValue(plan, "포함할 업무 단계"),
       demo_input: mdValue(plan, "데모 입력"),
-      demo_output: mdValue(plan, "데모 산출물") || compact(caseStudy.match(/## MVP 결과물\s+([^#]+)/u)?.[1] ?? ""),
+      demo_output: mdValue(plan, "데모 산출물") || section(caseStudy, "MVP 결과물"),
     },
     existing_workflow: {
       current_pain_points: mdValue(workflow, "불편한 지점"),
       data_count: mdValue(workflow, "데이터 수"),
     },
     ai_agent_design: {
-      changed_workflow: mdValue(workflow, "바뀐 업무 흐름") || compact(caseStudy.match(/## AI 에이전트 워크플로\s+([^#]+)/u)?.[1] ?? ""),
+      changed_workflow: mdValue(workflow, "바뀐 업무 흐름") || section(caseStudy, "AI 에이전트 워크플로"),
       decision_boundary: mdValue(workflow, "판단 경계"),
     },
     human_in_the_loop: {
-      review_points: mdValue(workflow, "주요 검수 포인트") || compact(caseStudy.match(/## 사람 검토\s+([^#]+)/u)?.[1] ?? ""),
-    },
-    case_study: {
-      mvp_result: compact(caseStudy.match(/## MVP 결과물\s+([^#]+)/u)?.[1] ?? ""),
-      lessons: compact(caseStudy.match(/## 배운 점\s+([^#]+)/u)?.[1] ?? ""),
-    },
-    library_metadata: {
-      workflow_type: mdValue(workflow, "업무 유형"),
+      review_points: mdValue(workflow, "주요 검수 포인트") || section(caseStudy, "사람 검토"),
     },
     impact_and_reuse: {
       expected_time_change: mdValue(workflow, "기존 대비 소요 시간 변화"),
       quality_change: mdValue(workflow, "품질 변화"),
     },
+    case_study: {
+      title: frontmatter.title ?? "",
+      mvp_result: section(caseStudy, "MVP 결과물"),
+      lessons: section(caseStudy, "배운 점"),
+    },
   };
 }
 
 async function readProjectData(source) {
-  if (source.type === "input.json" || source.type === "workshop.json") {
-    return readJson(source.sourcePath);
-  }
+  if (source.type === "input.json" || source.type === "workshop.json") return readJson(source.sourcePath);
   return readMarkdownData(source.dir);
 }
 
-async function readPresentationInput(inputDir) {
-  const inputPath = path.join(inputDir, "presentation-input.json");
-  if (!await exists(inputPath)) return {};
-  return readJson(inputPath);
+async function readOverrides(inputDir) {
+  const filePath = path.join(inputDir, "presentation-input.json");
+  if (!await exists(filePath)) return {};
+  return readJson(filePath);
 }
 
-function buildSlide1Title(data) {
-  const workflowType = data.library_metadata?.workflow_type ?? "";
-  const problem = data.problem?.actual_work_problem ?? "";
-  const mvp = data.mvp?.single_feature ?? data.automation_target?.selected_task ?? "";
-  const text = `${workflowType} ${problem} ${mvp}`;
+function listFrom(text, max = 3) {
+  return compact(text)
+    .split(/\s*(?:->|→|>|,|，|및|와|과|;|；)\s*/u)
+    .map((item) => cleanEnd(item))
+    .filter(Boolean)
+    .slice(0, max);
+}
 
-  if (/일지|멘토링/u.test(text)) {
-    return "놓치기 쉬운 신호를 먼저 볼 순서로 정리합니다";
+function cleanWorkflowStep(value) {
+  return cleanEnd(value)
+    .replace(/^작동\s*\d+\s*단계\s*/u, "")
+    .replace(/^단계\s*\d+\s*/u, "")
+    .replace(/^\d+\s*단계\s*/u, "")
+    .trim();
+}
+
+function validateCoverIntros(content) {
+  const introKeys = [
+    ["social_innovator_intro", "사회혁신가 한줄소개"],
+    ["developer_intro", "개발자 한줄소개"],
+  ];
+  for (const [key, label] of introKeys) {
+    const value = String(content[key] ?? "");
+    if (value.length > 65) {
+      throw new Error(`${label}는 공백 포함 65자 이내여야 합니다. 현재 ${value.length}자입니다.`);
+    }
   }
-  if (/제보|분류|라우팅|답변 초안/u.test(text)) {
-    return "흩어진 제보를 대응 순서와 답변 초안으로 정리합니다";
+}
+
+function inferProjectTitle(data) {
+  return data.project?.name || data.project_name || data.case_study?.title || data.team?.name || data.team_name || "Codex Impact 프로젝트";
+}
+
+function inferSubtitle(data) {
+  const feature = data.mvp?.single_feature || data.automation_target?.selected_task || "";
+  const output = data.mvp?.demo_output || data.case_study?.mvp_result || "";
+  if (feature) {
+    const phrased = cleanEnd(feature)
+      .replace(/신청서와 상담 메모/gu, "신청서·상담 메모")
+      .replace(/우선순위와 확인 질문/gu, "우선순위·질문")
+      .replace(/정리한다$/u, "정리하는 AI")
+      .replace(/생성한다$/u, "생성하는 AI")
+      .replace(/분류한다$/u, "분류하는 AI");
+    return truncate(phrased, 42);
   }
-  if (/신청서검토|신청서|상담 메모|우선순위/u.test(text)) {
-    return "반복 검토에 묶인 시간을 우선순위 판단으로 돌립니다";
-  }
-  return "반복 업무에 묶인 시간을 현장 판단으로 돌립니다";
+  if (output) return `${truncate(output, 26)}를 정리하는 AI`;
+  return "현장 자료를 먼저 정리하고 사람이 결정하는 AI";
 }
 
-function buildFieldProblemBullets(data) {
-  const problem = data.problem?.actual_work_problem ?? "";
-  const input = data.current_workflow?.inputs ?? "";
-  const pain = data.existing_workflow?.current_pain_points ?? data.problem?.blocked_moment ?? "";
-  const role = personRole(data.problem?.people_affected ?? "");
-
-  return cardLines([
-    `${materialName(input || problem)} 반복 확인`,
-    problemDelayLine(problem, pain),
-    `${role} 판단 부담 증가`,
-  ]);
+function inferProblemTitle(data) {
+  const moment = data.problem?.blocked_moment || "";
+  const problem = data.problem?.actual_work_problem || "";
+  if (/월요일|주말/u.test(moment)) return "월요일 아침, 신청이 한 번에 몰립니다";
+  if (/제보|민원/u.test(problem)) return "여러 채널의 요청이 한 번에 들어옵니다";
+  if (/일지|상담|기록/u.test(problem)) return "중요한 신호가 기록 속에 묻힙니다";
+  return truncate(problem || "반복 확인 때문에 중요한 판단이 늦어집니다", 28);
 }
 
-function buildBottleneckBullets(data) {
-  const blocked = data.problem?.blocked_moment ?? "";
-  const pain = data.existing_workflow?.current_pain_points ?? "";
-  if (/월요일 오전|주말/u.test(blocked)) {
-    return lines([
-      "주말 접수 건 월요일 집중",
-      "긴급 사례 발견 지연",
-      "근거 확인 시간 증가",
-    ]);
-  }
-  if (/제보|채널|시설 파손/u.test(`${blocked} ${pain}`)) {
-    return lines([
-      "제보가 여러 채널로 동시 접수",
-      "유형·담당 후보 판단 지연",
-      "답변 톤과 기준 불일치",
-    ]);
-  }
-  return lines([
-    compactCardLine(blocked, 18),
-    compactCardLine(pain, 18),
-    "판단 기준 공유 어려움",
-  ]);
+function inferProblemPoints(data) {
+  const count = compact(data.existing_workflow?.data_count || data.mvp?.demo_input || "").match(/\d+\s*건/u)?.[0]?.replace(/\s+/g, "") || "";
+  const input = data.current_workflow?.inputs || "현장 자료";
+  const problem = data.problem?.actual_work_problem || "";
+  const pain = data.existing_workflow?.current_pain_points || data.problem?.blocked_moment || "";
+  const points = [
+    count ? `한 번에 확인할 자료가 ${count}까지 늘어남` : `${truncate(input, 16)}를 반복해서 확인해야 함`,
+    /우선순위|긴급/u.test(problem) ? "긴급 사례를 늦게 발견할 위험이 있음" : truncate(pain || "중요한 단서를 놓칠 위험이 있음", 30),
+    /기준|판단/u.test(`${problem} ${pain}`) ? "사람마다 판단 기준이 달라질 수 있음" : "최종 판단 전에 근거 정리가 필요함",
+  ];
+  return points.map((item) => truncate(item, 32));
 }
 
-function buildMvpBullets(data) {
-  const count = firstCount(data.mvp?.demo_input ?? data.existing_workflow?.data_count ?? "") || "샘플";
-  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
-  if (/우선순위/u.test(output)) {
-    return lines([
-      `가상 샘플 ${count} 입력`,
-      "우선순위표 자동 정리",
-      "확인 질문까지 생성",
-    ]);
-  }
-  if (/제보|담당 후보|답변 초안/u.test(output)) {
-    return lines([
-      `익명 제보 ${count} 입력`,
-      "유형·담당 후보 정리",
-      "확인 질문·답변 초안 생성",
-    ]);
-  }
-  return cardLines([
-    `${materialName(data.mvp?.demo_input ?? "")} 입력`,
-    data.mvp?.single_feature ?? "핵심 흐름 자동 정리",
-    data.mvp?.demo_output ?? output,
-  ]);
+function inferSolutionTitle(data) {
+  const context = `${data.problem?.actual_work_problem || ""} ${data.mvp?.demo_output || ""}`;
+  if (/우선순위|긴급/u.test(context)) return "AI가 검토의 출발점을,\n결정은 사람이 합니다";
+  if (/제보|답변/u.test(context)) return "AI가 분류의 출발점을,\n대응은 사람이 합니다";
+  return "AI가 반복 정리를 맡고,\n결정은 사람이 합니다";
 }
 
-function buildFieldImpactBullets(data) {
-  const output = data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "";
-  const quality = data.impact_and_reuse?.quality_change ?? "";
-  if (/우선순위/u.test(output)) {
-    return lines([
-      "긴급 사례를 더 빨리 발견",
-      "회의 전 판단 근거 공유",
-      "담당자 간 검토 기준 일관화",
-    ]);
-  }
-  if (/답변|분류|제보/u.test(output)) {
-    return lines([
-      "누락될 제보를 먼저 발견",
-      "활동가 간 답변 기준 정렬",
-      "처리 기록 재사용 기반 확보",
-    ]);
-  }
-  return lines([
-    "먼저 볼 대상 빠르게 확인",
-    "회의 전 판단 근거 공유",
-    "담당자 간 기준 일관화",
-  ]);
+function inferWorkflowSteps(data) {
+  const flow = data.mvp?.included_workflow_steps || data.ai_agent_design?.changed_workflow || "";
+  const steps = listFrom(flow, 3);
+  if (steps.length >= 3) return steps.map((step) => truncate(cleanWorkflowStep(step.replace(/^AI가\s*/u, "")), 24));
+  return [
+    "샘플 자료 입력",
+    "AI가 핵심 단서 정리",
+    "사람이 최종 판단",
+  ];
 }
 
-function buildResponsibleUseBullets(data) {
-  const boundary = data.ai_agent_design?.decision_boundary ?? data.human_in_the_loop?.review_points ?? "";
-  const review = data.human_in_the_loop?.review_points ?? "";
-  return cardLines([
-    /AI/u.test(boundary) ? "AI는 판단 보조까지만" : "최종 결정은 사람 몫",
-    "개인정보·민감정보 제외",
-    reviewLine(review || boundary),
-  ]);
+function inferBefore(data) {
+  const inputs = data.current_workflow?.inputs || "자료";
+  const problem = data.problem?.actual_work_problem || "";
+  if (/우선순위|긴급/u.test(problem)) return `${truncate(inputs, 12)} 등을\n직접 전부 정독하고,\n우선순위를 판단`;
+  return `${truncate(inputs, 12)}를\n직접 확인하고,\n필요한 조치를 판단`;
 }
 
-function splitPeopleAffected(text) {
-  const parts = compact(text)
-    .split(/\s*(?:와|과|및|,|，|\/)\s*/u)
-    .map(trimEnd)
-    .filter(Boolean);
-  return parts;
+function inferAfterAi(data) {
+  const output = data.mvp?.demo_output || data.case_study?.mvp_result || "";
+  if (/우선순위|긴급/u.test(output)) return "AI\n핵심정보·긴급도·근거·확인질문을\n분석하여 표로 정리";
+  if (/답변|제보|분류/u.test(output)) return "AI\n유형·담당 후보·확인질문을\n분류하여 초안으로 정리";
+  return "AI\n핵심 단서와 확인 질문을\n한눈에 보이게 정리";
 }
 
-function inferWorkActor(data) {
-  const people = splitPeopleAffected(data.problem?.people_affected ?? "");
-  const actor = people.find((part) => /담당자|코디네이터|활동가|멘토|복지|기관|실무자|직원|교사|상담사|운영자/u.test(part));
-  return actor || people[0] || "업무를 처리하는 사람";
+function inferAfterHuman(data) {
+  const boundary = data.ai_agent_design?.decision_boundary || data.human_in_the_loop?.review_points || "";
+  if (/연락|지원/u.test(boundary)) return "사람\nAI 분석물을 기반으로\n최종 지원·연락 순서 결정";
+  if (/답변|대응/u.test(boundary)) return "사람\nAI 정리본을 검토하고\n최종 대응 여부 결정";
+  return "사람\nAI 정리본을 검토하고\n최종 판단과 책임 수행";
 }
 
-function inferBeneficiary(data) {
-  const people = splitPeopleAffected(data.problem?.people_affected ?? "");
-  const actor = inferWorkActor(data);
-  const beneficiary = people.find((part) => part !== actor && /청소년|주민|가구|참여자|수혜|신청|아동|학생|어르신|장애|보호자|지역/u.test(part));
-  return beneficiary || people.find((part) => part !== actor) || "도움을 받거나 영향을 받는 사람";
+function inferImpactTitle(data) {
+  const output = data.mvp?.demo_output || data.case_study?.mvp_result || "";
+  if (/우선순위|긴급/u.test(output)) return "긴급 사례가 빨리 발견되고\n검토 기준이 일관화됩니다";
+  if (/답변|제보|분류/u.test(output)) return "누락될 요청이 줄고\n대응 기준이 일관화됩니다";
+  return "반복 확인이 줄고\n현장 판단이 빨라집니다";
 }
 
-function expectedChangeSummary(content) {
-  const items = String(content.field_impact_bullets ?? "")
-    .split("\n")
-    .map(trimEnd)
-    .filter(Boolean);
-  if (items.length === 0) return "업무 지연과 누락이 줄고 필요한 조치가 더 빠르게 이어진다";
-  if (items.length === 1) return items[0];
-  return items.join(" / ");
-}
-
-function buildProblemImagePrompt(data) {
-  const actual = data.problem?.actual_work_problem ?? "";
-  const people = data.problem?.people_affected ?? "";
-  const moment = data.problem?.blocked_moment ?? "";
-  const inputs = data.current_workflow?.inputs ?? "";
-  const steps = data.current_workflow?.steps ?? "";
-  const pain = data.existing_workflow?.current_pain_points ?? "";
-
-  return `아래 참가자 입력을 바탕으로, 이 팀의 문제가 실제 현장에서 드러나는 순간을 추론해 한 장의 현실적인 이미지로 표현해줘.
-
-참가자 답변
-
-- 실제 업무 문제: ${actual}
-- 가장 어려움을 겪는 사람: ${people}
-- 문제가 발생하는 순간: ${moment}
-- 입력 자료/현장 단서: ${inputs}
-- 현재 처리 흐름: ${steps}
-- 불편한 지점: ${pain}
-
-이미지 생성 요청
-
-이 이미지는 해결책을 보여주는 것이 아니라, 아직 해결되지 않은 현재의 문제상황을 보여주기 위한 것이다. 입력된 내용을 읽고, 어떤 장소·관계·상황에서 문제가 가장 잘 드러나는지 먼저 판단한 뒤 최종 이미지 1장만 만들어줘.
-
-다음 요소가 자연스럽게 드러나게 표현해줘.
-
-1. 이 팀의 입력에서 드러나는 실제 현장 맥락
-2. 가장 어려움을 겪는 사람이 마주한 부담, 지연, 누락, 혼선, 판단 어려움
-3. 문제의 사회적 맥락과 왜 해결이 필요한지 3초 안에 이해되는 상태
-4. 해결 전 상태임이 분명한 분위기
-5. 특정 소품보다 문제의 원인과 결과가 자연스럽게 보이는 장면
-
-중요한 방향
-
-- 사무실, 책상, 노트북, 서류, 회의, 체크리스트 장면으로 기본값처럼 만들지 말아줘.
-- 그런 요소는 참가자 입력상 반드시 필요할 때만 보조적으로 사용해줘.
-- 팀의 실제 맥락에 더 맞는 현장, 관계, 공간, 상황이 있다면 그것을 우선해줘.
-
-단, 다음은 포함하지 말아줘.
-
-- AI가 이미 문제를 해결해주는 장면
-- 자동화된 대시보드나 완성된 시스템 화면
-- 과장되거나 자극적인 고통 표현
-- 특정 개인을 비난하는 듯한 연출
-- 실제 개인정보, 이름, 전화번호, 주소, 주민번호, 얼굴이 특정되는 정보
-- 읽어야 이해되는 긴 문장이나 복잡한 텍스트
-
-현실적인 사진 스타일로, 발표자료에 넣었을 때 문제상황이 직관적으로 보이는 최종 한 장면으로 만들어줘.`;
-}
-
-function buildSolutionImagePrompt(data, content) {
-  const actual = data.problem?.actual_work_problem ?? "";
-  const moment = data.problem?.blocked_moment ?? "";
-  const workActor = inferWorkActor(data);
-  const beneficiary = inferBeneficiary(data);
-  const change = expectedChangeSummary(content);
-
-  return `아래 내용을 바탕으로, 문제가 해결된 뒤의 상황을 최종 후보 1장의 현실적인 이미지로 표현해 주세요.
-
-이 이미지는 문제 상황을 보여주는 것이 아니라,
-업무 흐름이 개선된 이후 업무당사자와 수혜자가 더 편안하고 자연스럽게 연결되는 장면을 보여주기 위한 것입니다.
-
-입력 정보
-
-* 해결하고 싶은 실제 업무 문제와 맥락: ${actual}${moment ? ` 특히 ${moment}처럼 업무가 몰리거나 지연되기 쉬운 순간에 문제가 두드러진다.` : ""}
-* 업무를 처리하는 사람: ${workActor}
-* 도움을 받거나 영향을 받는 사람: ${beneficiary}
-* 개선 후 기대되는 변화: ${change}
-
-이미지 방향
-
-* 분위기는 밝고 차분하며, 안도감과 정리된 느낌이 나야 합니다.
-* 업무당사자와 수혜자가 서로 분리되어 있지 않고, 같은 흐름 안에서 자연스럽게 연결되어 보여야 합니다.
-* 도움이나 처리가 더 빠르고 편안하게 이어지는 상태를 사람들의 자세, 시선, 거리감, 공간 분위기, 상호작용으로 표현해 주세요.
-* 한국어/국내 맥락처럼 자연스럽게 보이되, 읽을 수 있는 글자나 영어 포스터는 넣지 마세요.
-* 수혜자는 배경에 혼자 떨어져 있지 않고, 업무당사자와 같은 상호작용 안에서 장면의 한 축으로 보여야 합니다.
-* 실제 얼굴이 식별되지 않도록 해 주세요. 단, 사람들을 모두 뒷모습으로만 표현하지 말고, 옆모습, 손동작, 시선 방향, 열린 자세 등으로 긍정적인 상호작용이 느껴지게 해 주세요.
-* 문서나 화면은 중심이 아니라 보조 단서로만 작게 표현해 주세요.
-* 화면, 문서, 자료가 등장해도 실제 이름, 연락처, 주소, 기관명, 학교명, 민감한 내용, 읽을 수 있는 개인정보는 절대 보이지 않게 해 주세요.
-
-피해야 할 것
-
-* 문제가 아직 해결되지 않은 것처럼 보이는 장면
-* 읽을 수 있는 글자, 영어 포스터, 기관 표어, 안내문이 눈에 띄는 장면
-* 실제 개인정보나 민감한 문장이 읽히는 화면 또는 문서
-* 특정 숫자, 실제 기관명, 실제 이름이 보이는 장면
-
-핵심 의도
-
-이 이미지의 중심은 “문제를 겪는 사람”이 아니라,
-개선된 흐름 덕분에 사람들이 더 빠르고 편안하게 연결되는 상태입니다.
-여러 후보를 만들지 말고 발표자료에 바로 넣을 최종 이미지 1장만 만들어 주세요.`;
-}
-
-function buildContent(data, input) {
+function inferImpactDetails(data) {
+  const time = data.impact_and_reuse?.expected_time_change || "";
+  const quality = data.impact_and_reuse?.quality_change || "";
+  const context = `${time} ${quality} ${data.mvp?.demo_output || ""} ${data.problem?.actual_work_problem || ""}`;
+  const timeLabel = /우선|먼저|순서/u.test(context) ? "우선 검토" : "검토 부담 완화";
+  const qualityLabel = /위험|신호/u.test(context) ? "위험 신호 기준" : "판단 근거 정리";
   return {
-    team_name: data.team?.name ?? data.team_name ?? "",
-    project_name: data.project?.name ?? data.project_name ?? data.case_study?.title ?? "",
-    slide1_title: input.slide1_title ?? buildSlide1Title(data),
-    field_problem_bullets: input.field_problem_bullets ?? buildFieldProblemBullets(data),
-    core_bottleneck_bullets: input.core_bottleneck_bullets ?? buildBottleneckBullets(data),
-    mvp_scope_bullets: input.mvp_scope_bullets ?? buildMvpBullets(data),
-    slide2_title: input.slide2_title ?? buildSlide2Title(data),
-    workflow_steps: input.workflow_steps ?? flowLines(data.mvp?.included_workflow_steps ?? data.ai_agent_design?.changed_workflow ?? "", 5),
-    output_items: input.output_items ?? outputLines(data.case_study?.mvp_result ?? data.mvp?.demo_output ?? "", 4),
-    field_impact_bullets: input.field_impact_bullets ?? buildFieldImpactBullets(data),
-    slide3_title: input.slide3_title ?? buildSlide3Title(data, {
-      field_impact_bullets: input.field_impact_bullets ?? buildFieldImpactBullets(data),
-    }),
-    responsible_use_bullets: input.responsible_use_bullets ?? buildResponsibleUseBullets(data),
+    time_label: timeLabel,
+    time_detail: truncate(time || "전체 정독 시간\n→ 먼저 볼 순서 확인", 34),
+    quality_label: qualityLabel,
+    quality_detail: truncate(quality || "사람마다 다른 기준\n→ 근거·질문 형식 통일", 34),
   };
+}
+
+function inferFooterQuote(data) {
+  const boundary = data.ai_agent_design?.decision_boundary || data.automation_target?.reason_for_selection || "";
+  if (/위험|긴급/u.test(boundary)) return "“위험 신호는 AI가 표시하고, 판단은 코디네이터가 합니다.”";
+  if (/분류|답변|대응/u.test(boundary)) return "“AI는 초안을 정리하고, 대응은 사람이 결정합니다.”";
+  return "“AI는 정리하고, 사람은 책임 있게 결정합니다.”";
+}
+
+function inferSpeakerNotes(content) {
+  const workflow = Array.isArray(content.workflow_steps) ? content.workflow_steps : [];
+  const problemPoints = Array.isArray(content.problem_points) ? content.problem_points : [];
+  const timings = [
+    "슬라이드 1 | 25초 | 0:00-0:25",
+    "슬라이드 2 | 35초 | 0:25-1:00",
+    "슬라이드 3 | 45초 | 1:00-1:45",
+    "슬라이드 4 | 40초 | 1:45-2:25",
+    "슬라이드 5 | 35초 | 2:25-3:00",
+  ];
+
+  return [
+    `[전체 발표 시간: 3분]\n시간 관계상 각 슬라이드별 권장 시간을 지켜 발표해 주세요.\n\n[${timings[0]}]\n안녕하세요. 저희는 ${content.project_title} 사례를 소개하겠습니다.\n\n이 프로젝트는 ${content.project_subtitle}입니다.\n\n핵심은 AI가 먼저 정리하고, 사람은 책임 있게 최종 판단하도록 돕는 것입니다.`,
+    `[${timings[1]}]\n문제는 ${content.problem_title}는 점입니다.\n\n${problemPoints[0] || "현장 자료가 한꺼번에 몰립니다"}.\n\n${problemPoints[1] || "중요한 단서가 여러 기록 사이에 묻힐 수 있습니다"}.\n\n그래서 공유 전에는 근거와 후속 확인 내용을 사람이 다시 확인할 수 있어야 합니다.`,
+    `[${timings[2]}]\n그래서 저희는 ${content.solution_title.replace(/\n/gu, " ")}라는 흐름으로 설계했습니다.\n\n기존에는 ${content.before_summary.replace(/\n/gu, " ")}.\n\n개선 후에는 ${content.after_ai_summary.replace(/^AI\s*/u, "").replace(/\n/gu, " ")}.\n\n이후 ${content.after_human_summary.replace(/^사람\s*/u, "").replace(/\n/gu, " ")}. 즉 AI는 판정자가 아니라 검토 보조 역할입니다.`,
+    `[${timings[3]}]\n작동 흐름은 세 단계로 줄였습니다.\n\n첫째, ${workflow[0] || "자료를 입력합니다"}.\n\n둘째, ${workflow[1] || "AI가 핵심 단서를 정리합니다"}.\n\n셋째, ${workflow[2] || "사람이 최종 판단합니다"}.\n\n이렇게 하면 발표나 공유 전에 무엇을 먼저 확인해야 하는지 빠르게 잡을 수 있습니다.`,
+    `[${timings[4]}]\n기대 효과는 두 가지입니다.\n\n첫째, ${content.time_label}입니다. ${content.time_detail}.\n\n둘째, ${content.quality_label}입니다. ${content.quality_detail}.\n\n이 도구는 판단을 자동화하려는 것이 아니라, 사람이 더 빠르고 책임 있게 판단할 수 있도록 출발점을 정리하는 데 초점을 둡니다. 감사합니다.`,
+  ];
+}
+
+function normalizeContent(content) {
+  const normalized = {
+    ...content,
+    workflow_steps: Array.isArray(content.workflow_steps)
+      ? content.workflow_steps.map((step) => cleanWorkflowStep(step))
+      : content.workflow_steps,
+  };
+  return {
+    ...normalized,
+    speaker_notes: Array.isArray(normalized.speaker_notes) ? normalized.speaker_notes : inferSpeakerNotes(normalized),
+  };
+}
+
+function buildContent(data, overrides) {
+  const impact = inferImpactDetails(data);
+  const content = {
+    project_title: inferProjectTitle(data),
+    project_subtitle: inferSubtitle(data),
+    developer_name: data.team?.developer || data.developer_name || "",
+    developer_intro: "",
+    social_innovator_name: data.team?.social_innovator || data.social_innovator_name || "",
+    social_innovator_intro: "",
+    deck_month: new Date().toISOString().slice(0, 7).replace("-", "."),
+    problem_title: inferProblemTitle(data),
+    problem_points: inferProblemPoints(data),
+    solution_title: inferSolutionTitle(data),
+    before_summary: inferBefore(data),
+    after_ai_summary: inferAfterAi(data),
+    after_human_summary: inferAfterHuman(data),
+    workflow_steps: inferWorkflowSteps(data),
+    impact_title: inferImpactTitle(data),
+    footer_quote: inferFooterQuote(data),
+    ...impact,
+  };
+  const normalized = normalizeContent({ ...content, ...overrides });
+  validateCoverIntros(normalized);
+  return normalized;
 }
 
 async function writeExampleInput(inputDir) {
   const examplePath = path.join(inputDir, "presentation-input.example.json");
-  await fs.writeFile(examplePath, JSON.stringify({
-    slide1_title: "",
-    field_problem_bullets: "",
-    core_bottleneck_bullets: "",
-    mvp_scope_bullets: "",
-    slide2_title: "",
-    workflow_steps: "",
-    output_items: "",
-    slide3_title: "",
-    field_impact_bullets: "",
-    responsible_use_bullets: "",
-  }, null, 2));
+  const example = {
+    project_title: "",
+    project_subtitle: "",
+    developer_name: "",
+    developer_intro: "",
+    social_innovator_name: "",
+    social_innovator_intro: "",
+    problem_title: "",
+    problem_points: ["", "", ""],
+    solution_title: "",
+    before_summary: "",
+    after_ai_summary: "",
+    after_human_summary: "",
+    workflow_steps: ["", "", ""],
+    impact_title: "",
+    time_label: "",
+    time_detail: "",
+    quality_label: "",
+    quality_detail: "",
+    footer_quote: "",
+    speaker_notes: ["", "", "", "", ""],
+  };
+  await fs.writeFile(examplePath, JSON.stringify(example, null, 2));
   return examplePath;
 }
 
@@ -698,57 +414,24 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const source = await resolveInputDir(args);
   const data = await readProjectData(source);
-  const input = await readPresentationInput(source.dir);
-  const content = buildContent(data, input);
-  const problemPrompt = buildProblemImagePrompt(data);
-  const solutionPrompt = buildSolutionImagePrompt(data, content);
+  const overrides = await readOverrides(source.dir);
+  const content = buildContent(data, overrides);
   const outDir = path.join(source.dir, "outputs");
   const assetsDir = path.join(source.dir, "presentation-assets");
-
-  const optionalAssets = [];
-  const generatedAssets = [];
-  if (!await exists(path.join(assetsDir, "result_screenshot.png"))) {
-    optionalAssets.push({
-      key: "result_screenshot",
-      path: path.join(assetsDir, "result_screenshot.png"),
-      question: "2페이지 결과물 캡처가 있으면 presentation-assets/result_screenshot.png로 넣어주세요. 없으면 사용자가 '2페이지 캡처는 비워도 됩니다'라고 명시한 경우에만 비웁니다.",
-    });
-  }
-  if (!await exists(path.join(assetsDir, "problem_image.png"))) {
-    generatedAssets.push({
-      key: "problem_image",
-      path: path.join(assetsDir, "problem_image.png"),
-      prompt: path.join(outDir, "problem-image-prompt.txt"),
-      action: "1페이지 문제상황 이미지는 없으면 이 프롬프트로 최종 후보 1장만 생성합니다.",
-    });
-  }
-  if (!await exists(path.join(assetsDir, "solution_image.png"))) {
-    generatedAssets.push({
-      key: "solution_image",
-      path: path.join(assetsDir, "solution_image.png"),
-      prompt: path.join(outDir, "solution-image-prompt.txt"),
-      action: "3페이지 해결 후 현장 이미지는 없으면 이 프롬프트로 최종 후보 1장만 생성합니다.",
-    });
-  }
-
+  const screenshot = path.join(assetsDir, "result_screenshot.png");
   await fs.mkdir(outDir, { recursive: true });
-  await fs.writeFile(path.join(outDir, "presentation-placeholder-content.json"), JSON.stringify(content, null, 2));
-  await fs.writeFile(path.join(outDir, "problem-image-prompt.txt"), problemPrompt);
-  await fs.writeFile(path.join(outDir, "solution-image-prompt.txt"), solutionPrompt);
-  const examplePath = await writeExampleInput(source.dir);
-
+  const contentPath = path.join(outDir, "presentation-content.json");
+  await fs.writeFile(contentPath, JSON.stringify(content, null, 2));
+  const exampleInput = await writeExampleInput(source.dir);
   console.log(JSON.stringify({
     inputDir: source.dir,
     dataSource: source.sourcePath,
     dataSourceType: source.type,
-    content: path.join(outDir, "presentation-placeholder-content.json"),
-    problemImagePrompt: path.join(outDir, "problem-image-prompt.txt"),
-    solutionImagePrompt: path.join(outDir, "solution-image-prompt.txt"),
-    optionalInput: path.join(source.dir, "presentation-input.json"),
-    exampleInput: examplePath,
-    optionalAssets,
-    generatedAssets,
-    nextAction: "최종 Google Slides 템플릿 사본에 placeholder와 이미지를 채우세요.",
+    googleSlidesTemplate: "https://docs.google.com/presentation/d/13pVNcDsFf1DX6emPLjOt1NvtPE9xpkh02GQAbs3IT1g/edit?usp=sharing",
+    content: contentPath,
+    exampleInput,
+    resultScreenshot: await exists(screenshot) ? screenshot : null,
+    nextAction: "Google Slides 템플릿을 복사한 뒤 build-google-slides-requests.mjs를 실행하고 batchUpdate를 적용하세요.",
   }, null, 2));
 }
 
